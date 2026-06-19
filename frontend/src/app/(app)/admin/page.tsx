@@ -19,7 +19,16 @@ const ROLE_COLORS: Record<string, 'default' | 'success' | 'warning' | 'secondary
 export default function AdminPage() {
   const { data: members, isLoading } = useTeamMembers();
   const updateRole = useUpdateUserRole();
-  const { user } = useAuthStore();
+  const { user, profile } = useAuthStore();
+
+  if (profile && profile.role !== 'admin' && profile.role !== 'owner') {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <p className="text-lg font-semibold text-foreground">Access Denied</p>
+        <p className="mt-1 text-sm text-muted-foreground">You need admin or owner privileges to view this page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

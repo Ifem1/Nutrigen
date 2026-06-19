@@ -3,13 +3,14 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
-  LayoutDashboard, FlaskConical, History, ShieldCheck,
-  BarChart3, ClipboardList, AlertTriangle,
+  LayoutDashboard, FlaskConical, History,
+  ClipboardList, AlertTriangle,
   Settings, Users, ChevronLeft, ChevronRight, Leaf,
   Tractor, Beef, Package, BookOpen,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useUIStore } from '@/store/uiStore';
+import { useAuthStore } from '@/store/authStore';
 
 const NAV = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -23,14 +24,11 @@ const NAV = [
   { label: 'Audit Trail', href: '/audit', icon: ClipboardList },
 ];
 
-const BOTTOM_NAV = [
-  { label: 'Settings', href: '/settings', icon: Settings },
-  { label: 'Admin', href: '/admin', icon: Users },
-];
-
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
+  const { profile } = useAuthStore();
   const pathname = usePathname();
+  const isAdminOrOwner = profile?.role === 'admin' || profile?.role === 'owner';
 
   return (
     <aside
@@ -78,7 +76,8 @@ export function Sidebar() {
       {/* Bottom nav */}
       <div className="border-t border-border py-3">
         <ul className="space-y-0.5 px-2">
-          {BOTTOM_NAV.map(({ label, href, icon: Icon }) => {
+          {/* Settings — always visible */}
+          {[{ label: 'Settings', href: '/settings', icon: Settings }].map(({ label, href, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(href + '/');
             return (
               <li key={href}>
@@ -98,6 +97,27 @@ export function Sidebar() {
               </li>
             );
           })}
+          {/* Admin — only visible to admin/owner */}
+          {isAdminOrOwner && (() => {
+            const active = pathname === '/admin' || pathname.startsWith('/admin/');
+            return (
+              <li>
+                <Link
+                  href="/admin"
+                  className={clsx(
+                    'flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
+                    active
+                      ? 'bg-brand-50 text-brand-700'
+                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                  )}
+                  title={sidebarCollapsed ? 'Admin' : undefined}
+                >
+                  <Users className="h-4 w-4 shrink-0" />
+                  {!sidebarCollapsed && <span>Admin</span>}
+                </Link>
+              </li>
+            );
+          })()}
         </ul>
 
         {/* Collapse toggle */}
