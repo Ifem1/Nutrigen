@@ -66,7 +66,7 @@ export function FeedStandardsClient() {
                     <p><span className="font-medium">Species:</span> {std.species_scope}</p>
                     <p><span className="font-medium">Stage:</span> {std.production_stage_scope}</p>
                   </div>
-                  {std.is_current && (
+                  {(std as any).is_current && (
                     <p className="mt-2 rounded bg-brand-50 px-2 py-0.5 text-center text-xs font-medium text-brand-700">Current version</p>
                   )}
                 </Card>
