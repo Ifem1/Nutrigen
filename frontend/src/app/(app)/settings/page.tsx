@@ -2,14 +2,15 @@
 
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Copy, Download, Shield } from 'lucide-react';
+import { Eye, EyeOff, Copy, Shield, Wallet } from 'lucide-react';
 import { Button, Input, Card, CardHeader, CardTitle, Badge } from '@/components/ui';
 import { useAuthStore } from '@/store/authStore';
 import { getSupabaseClient } from '@/lib/supabase/client';
-import { unlockWallet } from '@/lib/wallet/storage';
+import { unlockWallet, storeWallet } from '@/lib/wallet/storage';
+import { createEncryptedWallet } from '@/lib/wallet/generate';
 
 export default function SettingsPage() {
-  const { user, profile, walletAddress } = useAuthStore();
+  const { user, profile, walletAddress, setWalletAddress } = useAuthStore();
   const [showExport, setShowExport] = useState(false);
   const [exportPassword, setExportPassword] = useState('');
   const [privateKey, setPrivateKey] = useState('');
@@ -17,6 +18,9 @@ export default function SettingsPage() {
   const [exporting, setExporting] = useState(false);
   const [profileForm, setProfileForm] = useState({ full_name: profile?.full_name ?? '' });
   const [savingProfile, setSavingProfile] = useState(false);
+  const [generatingWallet, setGeneratingWallet] = useState(false);
+  const [genPassword, setGenPassword] = useState('');
+  const [showGenForm, setShowGenForm] = useState(false);
 
   async function handleSaveProfile() {
     if (!user) return;
@@ -27,6 +31,21 @@ export default function SettingsPage() {
       toast.success('Profile updated.');
     } catch { toast.error('Failed to update profile.'); }
     finally { setSavingProfile(false); }
+  }
+
+  async function handleGenerateWallet() {
+    if (!user || !genPassword) return;
+    setGeneratingWallet(true);
+    try {
+      const { wallet, encrypted } = await createEncryptedWallet(genPassword);
+      await storeWallet(user.id, wallet.address, encrypted.encryptedPrivateKey, encrypted.salt, encrypted.iv, encrypted.iterations);
+      setWalletAddress(wallet.address);
+      setShowGenForm(false);
+      setGenPassword('');
+      toast.success('Wallet generated and saved!');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to generate wallet.');
+    } finally { setGeneratingWallet(false); }
   }
 
   async function handleExportKey() {
@@ -60,7 +79,9 @@ export default function SettingsPage() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Blockchain Wallet</CardTitle>
-            <Badge variant="success" dot>Active</Badge>
+            <Badge variant={walletAddress ? 'success' : 'warning'} dot>
+              {walletAddress ? 'Active' : 'Not Generated'}
+            </Badge>
           </div>
         </CardHeader>
 
@@ -76,7 +97,34 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {!privateKey ? (
+        {/* No wallet — show generate button */}
+        {!walletAddress && (
+          !showGenForm ? (
+            <Button leftIcon={<Wallet className="h-4 w-4" />} onClick={() => setShowGenForm(true)}>
+              Generate My Wallet
+            </Button>
+          ) : (
+            <div className="rounded-lg border border-brand-200 bg-brand-50 p-4 space-y-3">
+              <p className="text-sm font-medium text-brand-800">Enter your account password to encrypt the wallet.</p>
+              <Input
+                label="Password"
+                type="password"
+                value={genPassword}
+                onChange={(e) => setGenPassword(e.target.value)}
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => { setShowGenForm(false); setGenPassword(''); }}>Cancel</Button>
+                <Button size="sm" onClick={handleGenerateWallet} loading={generatingWallet} disabled={!genPassword}>
+                  Generate & Save Wallet
+                </Button>
+              </div>
+            </div>
+          )
+        )}
+
+        {/* Has wallet — export key */}
+        {walletAddress && !privateKey && (
           !showExport ? (
             <Button variant="outline" size="sm" leftIcon={<Shield className="h-4 w-4" />} onClick={() => setShowExport(true)}>
               Export Private Key
@@ -97,9 +145,11 @@ export default function SettingsPage() {
               </div>
             </div>
           )
-        ) : (
+        )}
+
+        {privateKey && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 space-y-3">
-            <p className="text-sm font-medium text-red-800">🔑 Your Private Key — store this somewhere safe and close this page when done.</p>
+            <p className="text-sm font-medium text-red-800">🔑 Your Private Key — store this somewhere safe.</p>
             <div className="flex items-center gap-2">
               <code className="flex-1 break-all font-mono text-xs text-red-900">
                 {showKey ? privateKey : '•'.repeat(64)}
@@ -107,7 +157,7 @@ export default function SettingsPage() {
               <button onClick={() => setShowKey((v) => !v)}>
                 {showKey ? <EyeOff className="h-4 w-4 text-red-700" /> : <Eye className="h-4 w-4 text-red-700" />}
               </button>
-              <button onClick={() => { navigator.clipboard.writeText(privateKey); toast.success('Copied to clipboard'); }}>
+              <button onClick={() => { navigator.clipboard.writeText(privateKey); toast.success('Copied!'); }}>
                 <Copy className="h-4 w-4 text-red-700" />
               </button>
             </div>
