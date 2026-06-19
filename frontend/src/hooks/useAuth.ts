@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { createEncryptedWallet } from '@/lib/wallet/generate';
-import { storeWallet } from '@/lib/wallet/storage';
+import { storeWallet, unlockWallet } from '@/lib/wallet/storage';
 import { useAuthStore } from '@/store/authStore';
 import { useOrgStore } from '@/store/orgStore';
+
+const SESSION_PK_KEY = 'nutrigen_pk';
 
 export function useAuth() {
   const router = useRouter();
@@ -45,6 +47,9 @@ export function useAuth() {
         // Wallet storage failed — account still created, wallet can be stored later
       }
 
+      // Cache private key for this session so contract writes work immediately
+      sessionStorage.setItem(SESSION_PK_KEY, wallet.privateKey);
+
       return { user: data.user, walletAddress: wallet.address };
     },
     []
@@ -54,8 +59,18 @@ export function useAuth() {
 
   const signIn = useCallback(async (email: string, password: string) => {
     const supabase = getSupabaseClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
+
+    // Decrypt private key into session storage so contract writes work this session
+    if (data.user) {
+      try {
+        const privateKey = await unlockWallet(data.user.id, password);
+        sessionStorage.setItem(SESSION_PK_KEY, privateKey);
+      } catch {
+        // Wallet may not exist yet (user can generate one from Settings)
+      }
+    }
   }, []);
 
   // ── Sign Out ────────────────────────────────────────────
@@ -63,6 +78,7 @@ export function useAuth() {
   const signOut = useCallback(async () => {
     const supabase = getSupabaseClient();
     await supabase.auth.signOut();
+    sessionStorage.removeItem(SESSION_PK_KEY);
     reset();
     resetOrg();
     router.push('/login');
