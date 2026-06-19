@@ -3,57 +3,47 @@
 import { useEffect } from 'react';
 import { getSupabaseClient } from '@/lib/supabase/client';
 import { useAuthStore } from '@/store/authStore';
-import { useOrgStore } from '@/store/orgStore';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { setUser, setSession, setProfile, setWalletAddress, setLoading, setInitialized } =
     useAuthStore();
-  const { setOrganization } = useOrgStore();
 
   useEffect(() => {
     const supabase = getSupabaseClient();
 
     async function loadUserData(userId: string) {
-      const [profileResult, walletResult] = await Promise.all([
-        supabase
+      try {
+        const { data: profile } = await supabase
           .from('users')
-          .select('*, organizations(*)')
+          .select('*')
           .eq('id', userId)
-          .single(),
-        supabase
+          .single();
+        if (profile) setProfile(profile);
+
+        const { data: wallet } = await supabase
           .from('user_wallets')
           .select('address')
           .eq('user_id', userId)
           .eq('is_primary', true)
-          .single(),
-      ]);
-
-      if (profileResult.data) {
-        setProfile(profileResult.data);
-        if (profileResult.data.organizations) {
-          setOrganization(profileResult.data.organizations as never);
-        }
-      }
-
-      if (walletResult.data) {
-        setWalletAddress(walletResult.data.address);
+          .single();
+        if (wallet) setWalletAddress(wallet.address);
+      } catch {
+        // Tables may not exist yet — not fatal, user is still authenticated
       }
     }
 
-    // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Initial session check — always call setInitialized(true) no matter what
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
-
       if (session?.user) {
-        loadUserData(session.user.id).finally(() => {
-          setLoading(false);
-          setInitialized(true);
-        });
-      } else {
-        setLoading(false);
-        setInitialized(true);
+        await loadUserData(session.user.id);
       }
+    }).catch(() => {
+      // Network error — still mark initialized so UI doesn't spin forever
+    }).finally(() => {
+      setLoading(false);
+      setInitialized(true);
     });
 
     // Listen for auth state changes (login, logout, token refresh)
@@ -61,19 +51,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       async (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
-
         if (session?.user) {
           await loadUserData(session.user.id);
         } else {
           setProfile(null);
           setWalletAddress(null);
-          setOrganization(null);
         }
       }
     );
 
     return () => subscription.unsubscribe();
-  }, [setUser, setSession, setProfile, setWalletAddress, setLoading, setInitialized, setOrganization]);
+  }, [setUser, setSession, setProfile, setWalletAddress, setLoading, setInitialized]);
 
   return <>{children}</>;
 }
