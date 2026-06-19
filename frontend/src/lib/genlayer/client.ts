@@ -14,13 +14,21 @@ async function getSDK() {
 }
 
 function makeClient(privateKey?: string) {
-  // Returned synchronously — SDK is loaded lazily per call
-  return getSDK().then((sdk) =>
-    sdk.createClient({
+  return getSDK().then((sdk) => {
+    // Always disable window.ethereum so the SDK uses the provided privateKey
+    // via HTTP transport rather than routing through MetaMask.
+    const w = typeof window !== 'undefined' ? window : ({} as Window);
+    const savedEthereum = (w as any).ethereum;
+    if (savedEthereum) (w as any).ethereum = undefined;
+
+    const client = sdk.createClient({
       network: GENLAYER_NETWORK,
       ...(privateKey ? { privateKey } : {}),
-    })
-  );
+    });
+
+    if (savedEthereum) (w as any).ethereum = savedEthereum;
+    return client;
+  });
 }
 
 // ── Base call helpers ──────────────────────────────────────
