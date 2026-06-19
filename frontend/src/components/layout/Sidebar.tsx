@@ -6,7 +6,7 @@ import {
   LayoutDashboard, FlaskConical, History,
   ClipboardList, AlertTriangle,
   Settings, Users, ChevronLeft, ChevronRight, Leaf,
-  Tractor, Beef, Package, BookOpen,
+  Tractor, Beef, Package, BookOpen, UserCheck,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useUIStore } from '@/store/uiStore';
@@ -18,6 +18,7 @@ const NAV = [
   { label: 'Batches', href: '/batches', icon: Beef },
   { label: 'Ingredients', href: '/ingredients', icon: Package },
   { label: 'Feed Standards', href: '/feed-standards', icon: BookOpen },
+  { label: 'Advisors', href: '/advisors', icon: UserCheck },
   { label: 'Optimizer', href: '/optimizer', icon: FlaskConical },
   { label: 'History', href: '/history', icon: History },
   { label: 'Escalations', href: '/escalations', icon: AlertTriangle },
