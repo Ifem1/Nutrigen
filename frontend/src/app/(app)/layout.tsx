@@ -8,15 +8,15 @@ import { useAuthStore } from '@/store/authStore';
 import { PageSpinner } from '@/components/ui';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isInitialized } = useAuthStore();
+  const { user, isInitialized } = useAuthStore();
   const router = useRouter();
 
   useEffect(() => {
-    if (isInitialized && !isAuthenticated) router.push('/login');
-  }, [isAuthenticated, isInitialized, router]);
+    if (isInitialized && !user) router.push('/login');
+  }, [user, isInitialized, router]);
 
   if (!isInitialized) return <PageSpinner label="Loading Nutrigen…" />;
-  if (!isAuthenticated) return null;
+  if (!user) return null;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
