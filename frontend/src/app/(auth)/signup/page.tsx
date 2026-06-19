@@ -41,8 +41,8 @@ export default function SignUpPage() {
     try {
       await signUp(form.email, form.password, form.fullName);
       setStep('done');
-      toast.success('Account created! Your blockchain wallet has been generated.');
-      setTimeout(() => router.push('/onboarding'), 1500);
+      toast.success('Account created! Welcome to Nutrigen.');
+      setTimeout(() => router.push('/dashboard'), 1500);
     } catch (err) {
       setStep('form');
       toast.error(err instanceof Error ? err.message : 'Sign up failed. Please try again.');

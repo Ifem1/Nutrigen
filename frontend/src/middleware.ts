@@ -7,6 +7,7 @@ const PUBLIC_PATHS = [
   '/signup',
   '/forgot-password',
   '/reset-password',
+  '/onboarding',
 ];
 
 const AUTH_PATHS = ['/login', '/signup', '/forgot-password', '/reset-password'];
