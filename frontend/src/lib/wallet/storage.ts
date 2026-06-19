@@ -35,15 +35,25 @@ export async function storeWallet(
 export async function getWalletRecord(userId: string) {
   const supabase = getSupabaseClient();
 
-  const { data, error } = await supabase
+  // Try is_primary first, fall back to any wallet for this user
+  const { data: primary } = await supabase
     .from('user_wallets')
     .select('*')
     .eq('user_id', userId)
     .eq('is_primary', true)
-    .single();
+    .limit(1);
 
-  if (error) throw new Error(`Wallet not found: ${error.message}`);
-  return data;
+  if (primary && primary.length > 0) return primary[0];
+
+  const { data: any_ } = await supabase
+    .from('user_wallets')
+    .select('*')
+    .eq('user_id', userId)
+    .limit(1);
+
+  if (any_ && any_.length > 0) return any_[0];
+
+  throw new Error('No wallet found for this account. Please generate one from Settings.');
 }
 
 // ── Decrypt and return private key (client-side only) ────

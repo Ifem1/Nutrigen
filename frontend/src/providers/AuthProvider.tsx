@@ -31,13 +31,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } catch {}
 
           try {
-            const { data: wallet } = await supabase
+            const { data: wallets } = await supabase
               .from('user_wallets')
               .select('address')
               .eq('user_id', session.user.id)
-              .eq('is_primary', true)
-              .single();
-            if (wallet) setWalletAddress(wallet.address);
+              .limit(1);
+            if (wallets && wallets.length > 0) setWalletAddress(wallets[0].address);
           } catch {}
         }
 
