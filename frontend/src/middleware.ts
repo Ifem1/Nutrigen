@@ -40,8 +40,8 @@ export async function middleware(request: NextRequest) {
   const isPublicPath = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith('/api/'));
   const isAuthPath = AUTH_PATHS.some((p) => pathname === p);
 
-  // Logged-in user visiting auth pages → redirect to dashboard
-  if (user && isAuthPath) {
+  // Logged-in user visiting auth/marketing pages → redirect to dashboard
+  if (user && (isAuthPath || pathname === '/')) {
     return NextResponse.redirect(new URL('/dashboard', request.url));
   }
 
