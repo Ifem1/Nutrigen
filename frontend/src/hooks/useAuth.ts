@@ -32,14 +32,18 @@ export function useAuth() {
       // Generate wallet encrypted with the user's password
       const { wallet, encrypted } = await createEncryptedWallet(password);
 
-      await storeWallet(
-        data.user.id,
-        wallet.address,
-        encrypted.encryptedPrivateKey,
-        encrypted.salt,
-        encrypted.iv,
-        encrypted.iterations
-      );
+      try {
+        await storeWallet(
+          data.user.id,
+          wallet.address,
+          encrypted.encryptedPrivateKey,
+          encrypted.salt,
+          encrypted.iv,
+          encrypted.iterations
+        );
+      } catch {
+        // Wallet storage failed — account still created, wallet can be stored later
+      }
 
       return { user: data.user, walletAddress: wallet.address };
     },
