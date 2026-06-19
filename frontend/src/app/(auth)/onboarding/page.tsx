@@ -126,7 +126,8 @@ export default function OnboardingPage() {
             onChange={(e) => setForm({ ...form, slug: e.target.value })}
             error={errors.slug}
             hint="Used in your organization URL. Lowercase letters, numbers, and hyphens only."
-            leftAddon={<span className="text-xs">nutrigen.com/</span>}
+            leftAddon={<span className="text-xs text-muted-foreground">nutrigen.com/</span>}
+            className="pl-24"
           />
           <Textarea
             label="Description"
