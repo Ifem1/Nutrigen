@@ -20,7 +20,7 @@ export async function contractRead<T = unknown>(
   const body = {
     jsonrpc: '2.0', id: Date.now(), method: 'gen_call',
     params: [{
-      to: NUTRIGEN_CONTRACT_ADDRESS.toLowerCase(),
+      to: NUTRIGEN_CONTRACT_ADDRESS,
       from: '0x0000000000000000000000000000000000000000',
       data: '0x', value: '0x0', type: 'read',
       function_name: method, args_mode: 'positional', args,

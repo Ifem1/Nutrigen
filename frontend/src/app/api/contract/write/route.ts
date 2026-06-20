@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const RPC = process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || 'https://studio.genlayer.com/api';
-// Always lowercase — viem rejects mixed-case addresses with invalid EIP-55 checksum.
-const CONTRACT = (
-  process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS ||
-  '0x0c5ec297afda24f411500e3e37b82069a9b98c1a'
-).toLowerCase();
+// Keep original casing from env — StudioNet looks up contracts by their exact deployed address.
+// Fallback uses the checksummed form as deployed.
+const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0x0C5Ec297AfDA24F411500E3e37B82069a9b98C1a';
 
-// Call gen_call type=write directly over HTTP.
-// No viem address validation — addresses are plain strings in the JSON payload.
 export async function POST(req: NextRequest) {
   try {
     const { method, args, privateKey } = await req.json();
@@ -16,10 +12,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing method or privateKey' }, { status: 400 });
     }
 
-    // Derive sender address from private key using ethers (pure JS, no viem address checks here)
+    console.info('[Nutrigen server write env]', {
+      contractAddress: CONTRACT,
+      rpcUrl: RPC,
+      functionName: method,
+      nodeEnv: process.env.NODE_ENV,
+      vercelEnv: process.env.VERCEL_ENV,
+    });
+
+    // Derive sender address from private key using ethers (avoids viem address validation)
     const { Wallet } = await import('ethers');
     const wallet = new Wallet(privateKey);
-    const senderAddress = wallet.address.toLowerCase();
+    const senderAddress = wallet.address;
 
     const body = {
       jsonrpc: '2.0',
@@ -37,6 +41,8 @@ export async function POST(req: NextRequest) {
       }],
     };
 
+    console.info('[Nutrigen write] gen_call body:', JSON.stringify(body));
+
     const resp = await fetch(RPC, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -44,8 +50,9 @@ export async function POST(req: NextRequest) {
     });
 
     const json = await resp.json();
+    console.info('[Nutrigen write] gen_call response:', JSON.stringify(json));
+
     if (json.error) {
-      console.error('[contract/write] gen_call error:', json.error);
       throw new Error(json.error.message ?? JSON.stringify(json.error));
     }
 
