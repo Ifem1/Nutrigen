@@ -31,14 +31,21 @@ export function NewFarmClient() {
     setError('');
 
     try {
+      console.info('[Farm submit]', {
+        farmName: form.name,
+        farmType: form.farm_type,
+        locationContext: form.location_context,
+      });
+
       const now = new Date().toISOString();
       const metadata_hash = await buildMetadataHash({
         name: form.name, farm_type: form.farm_type,
         location_context: form.location_context, created_at: now,
       });
+      const farmId = `farm-${crypto.randomUUID()}`;
 
       const txHash = await createFarm({
-        farm_id: '', name: form.name,
+        farm_id: farmId, name: form.name,
         farm_type: form.farm_type, location_context: form.location_context,
         metadata_hash, created_at: now,
       }, privateKey, walletAddress);
@@ -49,9 +56,8 @@ export function NewFarmClient() {
       }
 
       // Mirror to Supabase — the contract auto-generates the ID so we read it from receipt
-      const farmId = (receipt.data as any)?.result ?? txHash;
       const supabase = createClient();
-      await supabase.from('farms').upsert({
+      const { error: farmError } = await supabase.from('farms').upsert({
         id: farmId, name: form.name, farm_type: form.farm_type,
         location_context: form.location_context, metadata_hash,
         status: 'ACTIVE', created_by_wallet: walletAddress,
@@ -60,6 +66,7 @@ export function NewFarmClient() {
           farm_id: farmId, name: form.name, farm_type: form.farm_type,
           location_context: form.location_context, metadata_hash,
           status: 'ACTIVE', created_by: walletAddress, created_at: now,
+          tx_hash: txHash,
           optimization_config: {
             min_approve_nutrient_adequacy: '78', min_approve_suitability: '78',
             min_approve_safety: '84', min_approve_availability: '65',
@@ -68,6 +75,7 @@ export function NewFarmClient() {
           },
         },
       });
+      if (farmError) throw new Error(`Farm created on-chain but Supabase persistence failed: ${farmError.message}`);
 
       router.push('/farms');
     } catch (err: any) {
