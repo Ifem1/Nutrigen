@@ -328,11 +328,27 @@ class NutrigenContract(gl.Contract):
 
     def _is_farm_owner_or_admin(self, farm_id: str, wallet: str) -> bool:
         role = self.farm_roles.get(self._key2(farm_id, wallet.lower()), "")
-        return role == "OWNER" or role == "ADMIN"
+        if role == "OWNER" or role == "ADMIN":
+            return True
+        # Fallback: treat the farm creator as OWNER even when roles aren't persisted
+        raw = self.farms.get(farm_id, "")
+        if raw:
+            farm = self._load(raw)
+            if farm.get("created_by", "").lower() == wallet.lower():
+                return True
+        return False
 
     def _is_farm_reviewer_or_admin(self, farm_id: str, wallet: str) -> bool:
         role = self.farm_roles.get(self._key2(farm_id, wallet.lower()), "")
-        return role == "OWNER" or role == "ADMIN" or role == "NUTRITIONIST" or role == "VET" or role == "REVIEWER"
+        if role in ("OWNER", "ADMIN", "NUTRITIONIST", "VET", "REVIEWER"):
+            return True
+        # Fallback: treat the farm creator as OWNER even when roles aren't persisted
+        raw = self.farms.get(farm_id, "")
+        if raw:
+            farm = self._load(raw)
+            if farm.get("created_by", "").lower() == wallet.lower():
+                return True
+        return False
 
     def _require_farm_owner_or_admin(self, farm_id: str) -> None:
         if not self._is_farm_owner_or_admin(farm_id, self._sender()):

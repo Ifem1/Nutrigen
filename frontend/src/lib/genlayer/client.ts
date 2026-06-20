@@ -1,4 +1,4 @@
-import { GENLAYER_NETWORK, NUTRIGEN_CONTRACT_ADDRESS } from './config';
+import { NUTRIGEN_CONTRACT_ADDRESS } from './config';
 import type {
   Farm, FeedAdvisor, LivestockBatch, FeedIngredient, FeedStandardVersion,
   OptimizationRequest, FeedDecision, Escalation, HumanFeedReview,
@@ -13,24 +13,6 @@ async function getSDK() {
   return _sdk;
 }
 
-function makeClient(privateKey?: string) {
-  return getSDK().then((sdk) => {
-    // Always disable window.ethereum so the SDK uses the provided privateKey
-    // via HTTP transport rather than routing through MetaMask.
-    const w = typeof window !== 'undefined' ? window : ({} as Window);
-    const savedEthereum = (w as any).ethereum;
-    if (savedEthereum) (w as any).ethereum = undefined;
-
-    const client = sdk.createClient({
-      network: GENLAYER_NETWORK,
-      ...(privateKey ? { privateKey } : {}),
-    });
-
-    if (savedEthereum) (w as any).ethereum = savedEthereum;
-    return client;
-  });
-}
-
 // ── Base call helpers ──────────────────────────────────────
 
 export async function contractRead<T = unknown>(
@@ -39,12 +21,18 @@ export async function contractRead<T = unknown>(
 ): Promise<T> {
   if (!NUTRIGEN_CONTRACT_ADDRESS)
     throw new Error('NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS is not set.');
-  const client = await makeClient();
-  return client.readContract({
+  const sdk = await getSDK();
+  // No account needed for reads — gen_call goes through HTTP regardless
+  const client = sdk.createClient({ chain: (sdk as any).chains.studionet });
+  const result = await (client as any).readContract({
     address: NUTRIGEN_CONTRACT_ADDRESS,
     functionName: method,
     args,
-  }) as Promise<T>;
+  });
+  // v1.1.8 returns decoded value; for string results just return it
+  if (result === null || result === undefined) return '' as unknown as T;
+  if (typeof result === 'object' && !Array.isArray(result)) return JSON.stringify(result) as unknown as T;
+  return result as T;
 }
 
 export async function contractWrite(
@@ -55,13 +43,16 @@ export async function contractWrite(
   if (!NUTRIGEN_CONTRACT_ADDRESS)
     throw new Error('NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS is not set.');
   if (!privateKey) throw new Error('Private key required for contract writes.');
-  const client = await makeClient(privateKey);
-  const txHash = await client.writeContract({
-    address: NUTRIGEN_CONTRACT_ADDRESS,
-    functionName: method,
-    args,
+
+  // Use the server-side API route (Node.js, no patched fetch, no window.ethereum)
+  const resp = await fetch('/api/contract/write', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method, args, privateKey }),
   });
-  return txHash as string;
+  const json = await resp.json();
+  if (json.error) throw new Error(json.error);
+  return json.result as string;
 }
 
 export async function waitForTransaction(
@@ -69,11 +60,18 @@ export async function waitForTransaction(
   timeoutMs = 120_000,
   pollMs = 3_000
 ): Promise<{ status: 'ACCEPTED' | 'REJECTED' | 'UNDETERMINED' | 'PENDING'; data?: unknown }> {
-  const client = await makeClient();
+  // simulateWriteContract / gen_call returns the result directly (not a 32-byte tx hash).
+  // If it's not a real 64-hex tx hash, the call already completed — return ACCEPTED.
+  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    return { status: 'ACCEPTED', data: { result: txHash } };
+  }
+
+  const sdk = await getSDK();
+  const client = sdk.createClient({ chain: (sdk as any).chains.studionet });
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const receipt = await client.getTransactionReceipt(txHash);
+      const receipt = await (client as any).getTransactionReceipt(txHash);
       if (receipt?.status && receipt.status !== 'PENDING')
         return { status: receipt.status as 'ACCEPTED' | 'REJECTED' | 'UNDETERMINED', data: receipt };
     } catch { /* not ready yet */ }
@@ -83,26 +81,33 @@ export async function waitForTransaction(
 }
 
 // Parses non-empty JSON string, returns null for empty
-function parseOrNull<T>(raw: string): T | null {
-  if (!raw || raw.trim() === '') return null;
-  return JSON.parse(raw) as T;
+function parseOrNull<T>(raw: unknown): T | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  if (typeof raw === 'object') return raw as T;
+  if (typeof raw === 'string') {
+    if (raw.trim() === '') return null;
+    try { return JSON.parse(raw) as T; } catch { return null; }
+  }
+  return null;
 }
 
 // Splits pipe-delimited index string into array, filters empties
-function splitIndex(raw: string): string[] {
-  if (!raw || raw.trim() === '') return [];
-  return raw.split('|').filter(Boolean);
+function splitIndex(raw: unknown): string[] {
+  if (!raw) return [];
+  const s = typeof raw === 'string' ? raw : String(raw);
+  if (s.trim() === '') return [];
+  return s.split('|').filter(Boolean);
 }
 
 // ── Contract read wrappers ─────────────────────────────────
 
 export async function getContractSummary(): Promise<ContractSummary | null> {
-  const raw = await contractRead<string>('get_contract_summary');
+  const raw = await contractRead<unknown>('get_contract_summary');
   return parseOrNull<ContractSummary>(raw);
 }
 
 export async function getFarm(farmId: string): Promise<Farm | null> {
-  const raw = await contractRead<string>('get_farm', [farmId]);
+  const raw = await contractRead<unknown>('get_farm', [farmId]);
   return parseOrNull<Farm>(raw);
 }
 
@@ -111,44 +116,44 @@ export async function getFarmRole(farmId: string, wallet: string): Promise<strin
 }
 
 export async function getFarmIndex(): Promise<string[]> {
-  const raw = await contractRead<string>('get_farm_index');
+  const raw = await contractRead<unknown>('get_farm_index');
   return splitIndex(raw);
 }
 
 export async function getFeedAdvisor(advisorId: string): Promise<FeedAdvisor | null> {
-  const raw = await contractRead<string>('get_feed_advisor', [advisorId]);
+  const raw = await contractRead<unknown>('get_feed_advisor', [advisorId]);
   return parseOrNull<FeedAdvisor>(raw);
 }
 
 export async function getFarmAdvisorIndex(farmId: string): Promise<string[]> {
-  const raw = await contractRead<string>('get_farm_advisor_index', [farmId]);
+  const raw = await contractRead<unknown>('get_farm_advisor_index', [farmId]);
   return splitIndex(raw);
 }
 
 export async function getLivestockBatch(batchId: string): Promise<LivestockBatch | null> {
-  const raw = await contractRead<string>('get_livestock_batch', [batchId]);
+  const raw = await contractRead<unknown>('get_livestock_batch', [batchId]);
   return parseOrNull<LivestockBatch>(raw);
 }
 
 export async function getFarmBatchIndex(farmId: string): Promise<string[]> {
-  const raw = await contractRead<string>('get_farm_batch_index', [farmId]);
+  const raw = await contractRead<unknown>('get_farm_batch_index', [farmId]);
   return splitIndex(raw);
 }
 
 export async function getFeedIngredient(ingredientId: string): Promise<FeedIngredient | null> {
-  const raw = await contractRead<string>('get_feed_ingredient', [ingredientId]);
+  const raw = await contractRead<unknown>('get_feed_ingredient', [ingredientId]);
   return parseOrNull<FeedIngredient>(raw);
 }
 
 export async function getFarmIngredientIndex(farmId: string): Promise<string[]> {
-  const raw = await contractRead<string>('get_farm_ingredient_index', [farmId]);
+  const raw = await contractRead<unknown>('get_farm_ingredient_index', [farmId]);
   return splitIndex(raw);
 }
 
 export async function getFeedStandardVersion(
   farmId: string, standardId: string, version: string
 ): Promise<FeedStandardVersion | null> {
-  const raw = await contractRead<string>('get_feed_standard_version', [farmId, standardId, version]);
+  const raw = await contractRead<unknown>('get_feed_standard_version', [farmId, standardId, version]);
   return parseOrNull<FeedStandardVersion>(raw);
 }
 
@@ -159,21 +164,21 @@ export async function getCurrentFeedStandardVersion(
 }
 
 export async function getFarmFeedStandardIndex(farmId: string): Promise<string[]> {
-  const raw = await contractRead<string>('get_farm_feed_standard_index', [farmId]);
+  const raw = await contractRead<unknown>('get_farm_feed_standard_index', [farmId]);
   return splitIndex(raw);
 }
 
 export async function getFeedStandardVersionIndex(
   farmId: string, standardId: string
 ): Promise<string[]> {
-  const raw = await contractRead<string>('get_feed_standard_version_index', [farmId, standardId]);
+  const raw = await contractRead<unknown>('get_feed_standard_version_index', [farmId, standardId]);
   return splitIndex(raw);
 }
 
 export async function getFeedOptimizationRequest(
   requestId: string
 ): Promise<OptimizationRequest | null> {
-  const raw = await contractRead<string>('get_feed_optimization_request', [requestId]);
+  const raw = await contractRead<unknown>('get_feed_optimization_request', [requestId]);
   return parseOrNull<OptimizationRequest>(raw);
 }
 
@@ -182,63 +187,63 @@ export async function getRequestDecisionId(requestId: string): Promise<string> {
 }
 
 export async function getDecision(decisionId: string): Promise<FeedDecision | null> {
-  const raw = await contractRead<string>('get_decision', [decisionId]);
+  const raw = await contractRead<unknown>('get_decision', [decisionId]);
   return parseOrNull<FeedDecision>(raw);
 }
 
 export async function getLatestDecisionForRequest(
   requestId: string
 ): Promise<FeedDecision | null> {
-  const raw = await contractRead<string>('get_latest_decision_for_request', [requestId]);
+  const raw = await contractRead<unknown>('get_latest_decision_for_request', [requestId]);
   return parseOrNull<FeedDecision>(raw);
 }
 
 export async function getEscalation(requestId: string): Promise<Escalation | null> {
-  const raw = await contractRead<string>('get_escalation', [requestId]);
+  const raw = await contractRead<unknown>('get_escalation', [requestId]);
   return parseOrNull<Escalation>(raw);
 }
 
 export async function getHumanReview(requestId: string): Promise<HumanFeedReview | null> {
-  const raw = await contractRead<string>('get_human_review', [requestId]);
+  const raw = await contractRead<unknown>('get_human_review', [requestId]);
   return parseOrNull<HumanFeedReview>(raw);
 }
 
 export async function getActivatedFeedPlan(
   requestId: string
 ): Promise<ActivatedFeedPlan | null> {
-  const raw = await contractRead<string>('get_activated_feed_plan', [requestId]);
+  const raw = await contractRead<unknown>('get_activated_feed_plan', [requestId]);
   return parseOrNull<ActivatedFeedPlan>(raw);
 }
 
 export async function getFarmRequestIndex(farmId: string): Promise<string[]> {
-  const raw = await contractRead<string>('get_farm_request_index', [farmId]);
+  const raw = await contractRead<unknown>('get_farm_request_index', [farmId]);
   return splitIndex(raw);
 }
 
 export async function getBatchRequestIndex(batchId: string): Promise<string[]> {
-  const raw = await contractRead<string>('get_batch_request_index', [batchId]);
+  const raw = await contractRead<unknown>('get_batch_request_index', [batchId]);
   return splitIndex(raw);
 }
 
 export async function getAdvisorRequestIndex(advisorId: string): Promise<string[]> {
-  const raw = await contractRead<string>('get_advisor_request_index', [advisorId]);
+  const raw = await contractRead<unknown>('get_advisor_request_index', [advisorId]);
   return splitIndex(raw);
 }
 
 export async function getAuditLog(auditId: string): Promise<AuditLog | null> {
-  const raw = await contractRead<string>('get_audit_log', [auditId]);
+  const raw = await contractRead<unknown>('get_audit_log', [auditId]);
   return parseOrNull<AuditLog>(raw);
 }
 
 export async function getRequestAuditIndex(requestId: string): Promise<string[]> {
-  const raw = await contractRead<string>('get_request_audit_index', [requestId]);
+  const raw = await contractRead<unknown>('get_request_audit_index', [requestId]);
   return splitIndex(raw);
 }
 
 export async function getReviewerReputation(
   farmId: string, reviewerWallet: string
 ): Promise<ReviewerReputation | null> {
-  const raw = await contractRead<string>('get_reviewer_reputation', [farmId, reviewerWallet]);
+  const raw = await contractRead<unknown>('get_reviewer_reputation', [farmId, reviewerWallet]);
   return parseOrNull<ReviewerReputation>(raw);
 }
 
