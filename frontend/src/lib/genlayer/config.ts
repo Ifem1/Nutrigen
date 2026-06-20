@@ -9,7 +9,7 @@ export const GENLAYER_NETWORK =
 
 export function getNutrigenContractAddress(): `0x${string}` {
   return normalizeAddress(
-    process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0x16A41A68Fe0c2c86ec7BdC0b55bC392971EdeDf7'
+    process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0x3E434eC608b19Bb30Ce32645b1A3b2C75FE10eE2'
   );
 }
 
