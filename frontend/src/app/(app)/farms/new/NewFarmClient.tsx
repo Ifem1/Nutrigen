@@ -41,7 +41,7 @@ export function NewFarmClient() {
         farm_id: '', name: form.name,
         farm_type: form.farm_type, location_context: form.location_context,
         metadata_hash, created_at: now,
-      }, privateKey);
+      }, privateKey, walletAddress);
 
       const receipt = await waitForTransaction(txHash);
       if (receipt.status !== 'ACCEPTED') {

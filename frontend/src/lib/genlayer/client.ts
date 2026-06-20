@@ -55,17 +55,17 @@ function decodeGenLayerHex<T>(hexResult: string): T {
 export async function contractWrite(
   method: string,
   args: unknown[],
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   if (!NUTRIGEN_CONTRACT_ADDRESS)
     throw new Error('NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS is not set.');
-  if (!privateKey) throw new Error('Private key required for contract writes.');
+  if (!walletAddress) throw new Error('Wallet address required for contract writes.');
 
-  // Use the server-side API route (Node.js, no patched fetch, no window.ethereum)
   const resp = await fetch('/api/contract/write', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ method, args, privateKey }),
+    body: JSON.stringify({ method, args, privateKey, walletAddress }),
   });
   const json = await resp.json();
   if (json.error) throw new Error(json.error);
@@ -262,12 +262,13 @@ export async function createFarm(
     farm_id: string; name: string; farm_type: string;
     location_context: string; metadata_hash: string; created_at: string;
   },
-  privateKey: string
+  privateKey: string,
+  walletAddress: string,
 ): Promise<string> {
   return contractWrite('create_farm', [
     args.farm_id, args.name, args.farm_type,
     args.location_context, args.metadata_hash, args.created_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function addFarmRole(

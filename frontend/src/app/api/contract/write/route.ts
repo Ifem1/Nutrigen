@@ -1,29 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const RPC = process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || 'https://studio.genlayer.com/api';
-// Keep original casing from env — StudioNet looks up contracts by their exact deployed address.
-// Fallback uses the checksummed form as deployed.
 const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0x0C5Ec297AfDA24F411500E3e37B82069a9b98C1a';
 
 export async function POST(req: NextRequest) {
   try {
-    const { method, args, privateKey } = await req.json();
-    if (!method || !privateKey) {
-      return NextResponse.json({ error: 'Missing method or privateKey' }, { status: 400 });
-    }
+    // Client sends walletAddress to avoid server-side private-key-to-address derivation
+    const { method, args, privateKey, walletAddress } = await req.json();
 
-    console.info('[Nutrigen server write env]', {
+    if (!method) return NextResponse.json({ error: 'Missing method' }, { status: 400 });
+    if (!walletAddress) return NextResponse.json({ error: 'Missing walletAddress' }, { status: 400 });
+
+    console.info('[Nutrigen /write debug]', {
       contractAddress: CONTRACT,
-      rpcUrl: RPC,
       functionName: method,
+      args,
+      from: walletAddress,
+      rpcUrl: RPC,
+      hasPrivateKey: Boolean(privateKey),
+      privateKeyLength: (privateKey || '').length,
       nodeEnv: process.env.NODE_ENV,
       vercelEnv: process.env.VERCEL_ENV,
     });
-
-    // Derive sender address from private key using ethers (avoids viem address validation)
-    const { Wallet } = await import('ethers');
-    const wallet = new Wallet(privateKey);
-    const senderAddress = wallet.address;
 
     const body = {
       jsonrpc: '2.0',
@@ -31,7 +29,7 @@ export async function POST(req: NextRequest) {
       method: 'gen_call',
       params: [{
         to: CONTRACT,
-        from: senderAddress,
+        from: walletAddress,
         data: '0x',
         value: '0x0',
         type: 'write',
@@ -41,8 +39,6 @@ export async function POST(req: NextRequest) {
       }],
     };
 
-    console.info('[Nutrigen write] gen_call body:', JSON.stringify(body));
-
     const resp = await fetch(RPC, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -50,14 +46,13 @@ export async function POST(req: NextRequest) {
     });
 
     const json = await resp.json();
-    console.info('[Nutrigen write] gen_call response:', JSON.stringify(json));
+    console.info('[Nutrigen /write] gen_call response:', JSON.stringify(json));
 
     if (json.error) {
       throw new Error(json.error.message ?? JSON.stringify(json.error));
     }
 
-    const decoded = decodeGenLayerResult(json.result);
-    return NextResponse.json({ result: decoded });
+    return NextResponse.json({ result: decodeGenLayerResult(json.result) });
   } catch (err: any) {
     console.error('[contract/write] error:', err?.message);
     return NextResponse.json({ error: err?.message ?? 'Unknown error' }, { status: 500 });
