@@ -41,7 +41,7 @@ export function NewIngredientClient() {
     try {
       const now = new Date().toISOString();
       const metadata_hash = await buildMetadataHash({ ...form, registered_at: now });
-      const txHash = await registerFeedIngredient({ ingredient_id: '', ...form, metadata_hash, registered_at: now }, privateKey);
+      const txHash = await registerFeedIngredient({ ingredient_id: '', ...form, metadata_hash, registered_at: now }, privateKey, walletAddress);
       const receipt = await waitForTransaction(txHash);
       if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted');
 

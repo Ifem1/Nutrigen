@@ -41,7 +41,7 @@ export function NewBatchClient() {
     try {
       const now = new Date().toISOString();
       const metadata_hash = await buildMetadataHash({ ...form, created_at: now });
-      const txHash = await registerLivestockBatch({ batch_id: '', ...form, metadata_hash, registered_at: now }, privateKey);
+      const txHash = await registerLivestockBatch({ batch_id: '', ...form, metadata_hash, registered_at: now }, privateKey, walletAddress);
       const receipt = await waitForTransaction(txHash);
       if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted');
 

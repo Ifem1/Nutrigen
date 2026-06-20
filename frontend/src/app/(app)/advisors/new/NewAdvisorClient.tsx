@@ -60,7 +60,7 @@ export function NewAdvisorClient() {
         wallet: form.wallet || walletAddress,
         metadata_hash,
         registered_at: now,
-      }, privateKey);
+      }, privateKey, walletAddress);
 
       const receipt = await waitForTransaction(txHash);
       if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted: ' + receipt.status);

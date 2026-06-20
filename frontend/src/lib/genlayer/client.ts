@@ -1,4 +1,4 @@
-import { NUTRIGEN_CONTRACT_ADDRESS } from './config';
+import { getNutrigenContractAddress } from './config';
 import type {
   Farm, FeedAdvisor, LivestockBatch, FeedIngredient, FeedStandardVersion,
   OptimizationRequest, FeedDecision, Escalation, HumanFeedReview,
@@ -13,14 +13,13 @@ export async function contractRead<T = unknown>(
   method: string,
   args: unknown[] = []
 ): Promise<T> {
-  if (!NUTRIGEN_CONTRACT_ADDRESS)
-    throw new Error('NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS is not set.');
+  const contractAddress = getNutrigenContractAddress();
 
   // Call gen_call type=read directly — avoids viem address checksum validation.
   const body = {
     jsonrpc: '2.0', id: Date.now(), method: 'gen_call',
     params: [{
-      to: NUTRIGEN_CONTRACT_ADDRESS,
+      to: contractAddress,
       from: '0x0000000000000000000000000000000000000000',
       data: '0x', value: '0x0', type: 'read',
       function_name: method, args_mode: 'positional', args,
@@ -58,9 +57,7 @@ export async function contractWrite(
   privateKey: string,
   walletAddress?: string,
 ): Promise<string> {
-  if (!NUTRIGEN_CONTRACT_ADDRESS)
-    throw new Error('NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS is not set.');
-  if (!walletAddress) throw new Error('Wallet address required for contract writes.');
+  getNutrigenContractAddress();
 
   const resp = await fetch('/api/contract/write', {
     method: 'POST',
@@ -74,6 +71,8 @@ export async function contractWrite(
 
 export async function waitForTransaction(
   txHash: string,
+  _timeoutMs?: number,
+  _pollMs?: number,
 ): Promise<{ status: 'ACCEPTED' | 'REJECTED' | 'UNDETERMINED' | 'PENDING'; data?: unknown }> {
   // gen_call returns the decoded result directly, not a 32-byte tx hash.
   // Short-circuit immediately — the write already completed (or failed) synchronously.
@@ -273,29 +272,32 @@ export async function createFarm(
 
 export async function addFarmRole(
   args: { farm_id: string; wallet: string; role: string; added_at: string },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('add_farm_role', [
     args.farm_id, args.wallet, args.role, args.added_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function removeFarmRole(
   args: { farm_id: string; wallet: string; removed_at: string },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('remove_farm_role', [
     args.farm_id, args.wallet, args.removed_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function setFarmStatus(
   args: { farm_id: string; status: string; updated_at: string },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('set_farm_status', [
     args.farm_id, args.status, args.updated_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function registerFeedAdvisor(
@@ -304,13 +306,14 @@ export async function registerFeedAdvisor(
     credential_summary: string; scope_summary: string;
     wallet: string; metadata_hash: string; registered_at: string;
   },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('register_feed_advisor', [
     args.advisor_id, args.farm_id, args.name,
     args.credential_summary, args.scope_summary,
     args.wallet, args.metadata_hash, args.registered_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function registerLivestockBatch(
@@ -320,14 +323,15 @@ export async function registerLivestockBatch(
     head_count: string; weight_summary: string; health_status_summary: string;
     feeding_constraints: string; metadata_hash: string; registered_at: string;
   },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('register_livestock_batch', [
     args.batch_id, args.farm_id, args.species,
     args.breed_summary, args.production_stage, args.production_goal,
     args.head_count, args.weight_summary, args.health_status_summary,
     args.feeding_constraints, args.metadata_hash, args.registered_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function registerFeedIngredient(
@@ -337,14 +341,15 @@ export async function registerFeedIngredient(
     availability_summary: string; cost_summary: string;
     metadata_hash: string; registered_at: string;
   },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('register_feed_ingredient', [
     args.ingredient_id, args.farm_id, args.name, args.category,
     args.nutrient_profile_summary, args.safety_summary,
     args.availability_summary, args.cost_summary,
     args.metadata_hash, args.registered_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function publishFeedStandardVersion(
@@ -356,7 +361,8 @@ export async function publishFeedStandardVersion(
     cost_and_availability_rules: string; standard_hash: string;
     metadata_hash: string; published_at: string;
   },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('publish_feed_standard_version', [
     args.farm_id, args.standard_id, args.version, args.title,
@@ -365,7 +371,7 @@ export async function publishFeedStandardVersion(
     args.toxin_and_anti_nutrient_rules, args.health_escalation_rules,
     args.cost_and_availability_rules, args.standard_hash,
     args.metadata_hash, args.published_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function submitAndOptimizeFeed(
@@ -380,7 +386,8 @@ export async function submitAndOptimizeFeed(
     ration_hash: string; submitted_at: string; expires_at: string;
     adjudicated_at: string;
   },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('submit_and_optimize_feed', [
     args.request_id, args.farm_id, args.batch_id, args.advisor_id,
@@ -391,7 +398,7 @@ export async function submitAndOptimizeFeed(
     args.supply_constraint_summary, args.health_context_summary,
     args.environment_context_summary, args.evidence_manifest_hash,
     args.ration_hash, args.submitted_at, args.expires_at, args.adjudicated_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function humanFeedReviewDecision(
@@ -399,12 +406,13 @@ export async function humanFeedReviewDecision(
     request_id: string; final_verdict: string; review_reason: string;
     review_evidence_hash: string; reviewer_notes: string; decided_at: string;
   },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('human_feed_review_decision', [
     args.request_id, args.final_verdict, args.review_reason,
     args.review_evidence_hash, args.reviewer_notes, args.decided_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function markFeedPlanActivated(
@@ -412,19 +420,21 @@ export async function markFeedPlanActivated(
     request_id: string; activation_hash: string;
     activation_summary: string; activated_at: string;
   },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('mark_feed_plan_activated', [
     args.request_id, args.activation_hash,
     args.activation_summary, args.activated_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }
 
 export async function markFeedPlanBlocked(
   args: { request_id: string; block_reason: string; blocked_at: string },
-  privateKey: string
+  privateKey: string,
+  walletAddress?: string,
 ): Promise<string> {
   return contractWrite('mark_feed_plan_blocked', [
     args.request_id, args.block_reason, args.blocked_at,
-  ], privateKey);
+  ], privateKey, walletAddress);
 }

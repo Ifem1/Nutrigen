@@ -48,7 +48,7 @@ export function NewStandardClient() {
 
       const txHash = await publishFeedStandardVersion({
         ...form, standard_hash, metadata_hash, published_at: now,
-      }, privateKey);
+      }, privateKey, walletAddress);
       const receipt = await waitForTransaction(txHash);
       if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted');
 

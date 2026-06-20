@@ -116,7 +116,7 @@ export default function OptimizerPage() {
         ...form,
         evidence_manifest_hash, ration_hash,
         submitted_at: now, expires_at: expiresAt, adjudicated_at: now,
-      }, privateKey);
+      }, privateKey, walletAddress);
 
       setTxStatus('Waiting for consensus… (up to 2 min)');
       const receipt = await waitForTransaction(txHash, 150_000);
