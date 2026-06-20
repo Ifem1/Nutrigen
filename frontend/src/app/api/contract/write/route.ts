@@ -1,75 +1,76 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from 'genlayer-js';
+import type { CalldataEncodable } from 'genlayer-js/types';
+import { studionet } from 'genlayer-js/chains';
+import { privateKeyToAccount } from 'viem/accounts';
+import { GENLAYER_CHAIN_ID } from '@/lib/genlayer/config';
+import { normalizeAddress } from '@/lib/genlayer/address';
 
-const RPC = process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || 'https://studio.genlayer.com/api';
-const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0x0C5Ec297AfDA24F411500E3e37B82069a9b98C1a';
+const RPC =
+  process.env.GENLAYER_RPC_URL ||
+  process.env.NEXT_PUBLIC_GENLAYER_RPC_URL ||
+  'https://studio.genlayer.com/api';
 
 export async function POST(req: NextRequest) {
   try {
-    // Client sends walletAddress to avoid server-side private-key-to-address derivation
     const { method, args, privateKey, walletAddress } = await req.json();
 
-    if (!method) return NextResponse.json({ error: 'Missing method' }, { status: 400 });
-    if (!walletAddress) return NextResponse.json({ error: 'Missing walletAddress' }, { status: 400 });
+    if (typeof method !== 'string' || !method.trim()) {
+      return NextResponse.json({ error: 'Missing method' }, { status: 400 });
+    }
 
-    console.info('[Nutrigen /write debug]', {
-      contractAddress: CONTRACT,
+    const signingKey = validatePrivateKey(
+      privateKey || process.env.GENLAYER_PRIVATE_KEY || process.env.PRIVATE_KEY
+    );
+    const account = privateKeyToAccount(signingKey);
+    const contractAddress = normalizeAddress(process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS);
+    const from = walletAddress ? normalizeAddress(walletAddress) : normalizeAddress(account.address);
+
+    if (normalizeAddress(account.address).toLowerCase() !== from.toLowerCase()) {
+      return NextResponse.json({ error: 'Wallet address does not match signing key.' }, { status: 400 });
+    }
+
+    const callArgs = Array.isArray(args) ? (args as CalldataEncodable[]) : [];
+
+    console.info('[Nutrigen write debug]', {
+      contractAddress,
       functionName: method,
-      args,
-      from: walletAddress,
+      args: callArgs,
+      from,
+      chainId: GENLAYER_CHAIN_ID,
       rpcUrl: RPC,
-      hasPrivateKey: Boolean(privateKey),
-      privateKeyLength: (privateKey || '').length,
+      hasPrivateKey: true,
+      privateKeyLength: signingKey.length,
       nodeEnv: process.env.NODE_ENV,
       vercelEnv: process.env.VERCEL_ENV,
     });
 
-    const body = {
-      jsonrpc: '2.0',
-      id: Date.now(),
-      method: 'gen_call',
-      params: [{
-        to: CONTRACT,
-        from: walletAddress,
-        data: '0x',
-        value: '0x0',
-        type: 'write',
-        function_name: method,
-        args_mode: 'positional',
-        args: args ?? [],
-      }],
-    };
-
-    const resp = await fetch(RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    const client = createClient({
+      chain: studionet,
+      account,
     });
 
-    const json = await resp.json();
-    console.info('[Nutrigen /write] gen_call response:', JSON.stringify(json));
+    // simulateWriteContract uses gen_call type=write with GenLayer's own calldata encoding.
+    // writeContract targets the consensus contract which is not deployed on StudioNet.
+    const result = await client.simulateWriteContract({
+      address: contractAddress,
+      functionName: method,
+      args: callArgs,
+    });
 
-    if (json.error) {
-      throw new Error(json.error.message ?? JSON.stringify(json.error));
-    }
+    console.info('[Nutrigen /write] simulateWriteContract result:', result);
 
-    return NextResponse.json({ result: decodeGenLayerResult(json.result) });
+    return NextResponse.json({ result: result ?? '' });
   } catch (err: any) {
     console.error('[contract/write] error:', err?.message);
     return NextResponse.json({ error: err?.message ?? 'Unknown error' }, { status: 500 });
   }
 }
 
-function decodeGenLayerResult(hexResult: string): string {
-  if (!hexResult || hexResult === '0x') return '';
-  try {
-    const hex = hexResult.startsWith('0x') ? hexResult.slice(2) : hexResult;
-    const bytes = hex.match(/.{2}/g)!.map((b) => parseInt(b, 16));
-    if (bytes.length === 0) return '';
-    const type = bytes[0] & 0b111;
-    const length = bytes[0] >> 3;
-    if (type === 4) {
-      return new TextDecoder().decode(new Uint8Array(bytes.slice(1, 1 + length)));
-    }
-  } catch { /* fall through */ }
-  return hexResult;
+function validatePrivateKey(value: unknown): `0x${string}` {
+  const key = String(value ?? '').trim();
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    throw new Error('Missing or invalid private key. Expected 0x + 64 hex characters.');
+  }
+  return key as `0x${string}`;
 }
