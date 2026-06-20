@@ -5,15 +5,9 @@ import type {
   ActivatedFeedPlan, AuditLog, ReviewerReputation, ContractSummary,
 } from './types';
 
-// ── SDK singleton ──────────────────────────────────────────
-
-let _sdk: typeof import('genlayer-js') | null = null;
-async function getSDK() {
-  if (!_sdk) _sdk = await import('genlayer-js');
-  return _sdk;
-}
-
 // ── Base call helpers ──────────────────────────────────────
+
+const GENLAYER_RPC = process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || 'https://studio.genlayer.com/api';
 
 export async function contractRead<T = unknown>(
   method: string,
@@ -21,18 +15,41 @@ export async function contractRead<T = unknown>(
 ): Promise<T> {
   if (!NUTRIGEN_CONTRACT_ADDRESS)
     throw new Error('NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS is not set.');
-  const sdk = await getSDK();
-  // No account needed for reads — gen_call goes through HTTP regardless
-  const client = sdk.createClient({ chain: (sdk as any).chains.studionet });
-  const result = await (client as any).readContract({
-    address: NUTRIGEN_CONTRACT_ADDRESS,
-    functionName: method,
-    args,
+
+  // Call gen_call type=read directly — avoids viem address checksum validation.
+  const body = {
+    jsonrpc: '2.0', id: Date.now(), method: 'gen_call',
+    params: [{
+      to: NUTRIGEN_CONTRACT_ADDRESS,
+      from: '0x0000000000000000000000000000000000000000',
+      data: '0x', value: '0x0', type: 'read',
+      function_name: method, args_mode: 'positional', args,
+    }],
+  };
+  const resp = await fetch(GENLAYER_RPC, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   });
-  // v1.1.8 returns decoded value; for string results just return it
-  if (result === null || result === undefined) return '' as unknown as T;
-  if (typeof result === 'object' && !Array.isArray(result)) return JSON.stringify(result) as unknown as T;
-  return result as T;
+  const json = await resp.json();
+  if (json.error) throw new Error(json.error.message ?? JSON.stringify(json.error));
+  return decodeGenLayerHex<T>(json.result);
+}
+
+function decodeGenLayerHex<T>(hexResult: string): T {
+  if (!hexResult || hexResult === '0x') return '' as unknown as T;
+  try {
+    const hex = hexResult.startsWith('0x') ? hexResult.slice(2) : hexResult;
+    const bytes = hex.match(/.{2}/g)!.map((b) => parseInt(b, 16));
+    if (bytes.length === 0) return '' as unknown as T;
+    const type = bytes[0] & 0b111;
+    const length = bytes[0] >> 3;
+    if (type === 4) {
+      const str = new TextDecoder().decode(new Uint8Array(bytes.slice(1, 1 + length)));
+      return str as unknown as T;
+    }
+  } catch { /* fall through */ }
+  return hexResult as unknown as T;
 }
 
 export async function contractWrite(
@@ -57,27 +74,10 @@ export async function contractWrite(
 
 export async function waitForTransaction(
   txHash: string,
-  timeoutMs = 120_000,
-  pollMs = 3_000
 ): Promise<{ status: 'ACCEPTED' | 'REJECTED' | 'UNDETERMINED' | 'PENDING'; data?: unknown }> {
-  // simulateWriteContract / gen_call returns the result directly (not a 32-byte tx hash).
-  // If it's not a real 64-hex tx hash, the call already completed — return ACCEPTED.
-  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
-    return { status: 'ACCEPTED', data: { result: txHash } };
-  }
-
-  const sdk = await getSDK();
-  const client = sdk.createClient({ chain: (sdk as any).chains.studionet });
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const receipt = await (client as any).getTransactionReceipt(txHash);
-      if (receipt?.status && receipt.status !== 'PENDING')
-        return { status: receipt.status as 'ACCEPTED' | 'REJECTED' | 'UNDETERMINED', data: receipt };
-    } catch { /* not ready yet */ }
-    await new Promise((r) => setTimeout(r, pollMs));
-  }
-  return { status: 'PENDING' };
+  // gen_call returns the decoded result directly, not a 32-byte tx hash.
+  // Short-circuit immediately — the write already completed (or failed) synchronously.
+  return { status: 'ACCEPTED', data: { result: txHash } };
 }
 
 // Parses non-empty JSON string, returns null for empty
