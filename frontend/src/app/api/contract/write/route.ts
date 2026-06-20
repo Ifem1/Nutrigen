@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+
+export const maxDuration = 300; // 5 minutes — AI consensus can take 2-3 min
 import { createClient } from 'genlayer-js';
 import type { CalldataEncodable } from 'genlayer-js/types';
 import { studionet } from 'genlayer-js/chains';
@@ -23,7 +25,7 @@ export async function POST(req: NextRequest) {
       privateKey || process.env.GENLAYER_PRIVATE_KEY || process.env.PRIVATE_KEY
     );
     const account = privateKeyToAccount(signingKey);
-    const contractAddress = normalizeAddress(process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0x3E434eC608b19Bb30Ce32645b1A3b2C75FE10eE2');
+    const contractAddress = normalizeAddress(process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0xF95d93aF54f77a81735f4066512C43c3CE68c2A7');
     const from = walletAddress ? normalizeAddress(walletAddress) : normalizeAddress(account.address);
 
     if (normalizeAddress(account.address).toLowerCase() !== from.toLowerCase()) {
