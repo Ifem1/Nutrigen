@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const RPC = process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || 'https://studio.genlayer.com/api';
-const CONTRACT = process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0xbC24799513516aB71CA2488C8aDA94DC4A0e0341';
+// Always lowercase — viem rejects mixed-case addresses with invalid EIP-55 checksum.
+const CONTRACT = (
+  process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS ||
+  '0xbc24799513516ab71ca2488c8ada94dc4a0e0341'
+).toLowerCase();
 
-// Call gen_call type=write directly — bypasses viem address validation entirely.
-// StudioNet supports positional args via gen_call so no ABI encoding needed.
+// Call gen_call type=write directly over HTTP.
+// No viem address validation — addresses are plain strings in the JSON payload.
 export async function POST(req: NextRequest) {
   try {
     const { method, args, privateKey } = await req.json();
@@ -12,10 +16,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing method or privateKey' }, { status: 400 });
     }
 
-    // Derive sender address from private key (only for `from` field in gen_call)
-    const { createAccount } = await import('genlayer-js');
-    const account = createAccount(privateKey as `0x${string}`);
-    const senderAddress = account.address;
+    // Derive sender address from private key using ethers (pure JS, no viem address checks here)
+    const { Wallet } = await import('ethers');
+    const wallet = new Wallet(privateKey);
+    const senderAddress = wallet.address.toLowerCase();
 
     const body = {
       jsonrpc: '2.0',
@@ -45,7 +49,6 @@ export async function POST(req: NextRequest) {
       throw new Error(json.error.message ?? JSON.stringify(json.error));
     }
 
-    // Decode the hex result from gen_call
     const decoded = decodeGenLayerResult(json.result);
     return NextResponse.json({ result: decoded });
   } catch (err: any) {
