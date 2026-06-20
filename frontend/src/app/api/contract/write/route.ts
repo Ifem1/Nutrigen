@@ -50,17 +50,26 @@ export async function POST(req: NextRequest) {
       account,
     });
 
-    // simulateWriteContract uses gen_call type=write with GenLayer's own calldata encoding.
-    // writeContract targets the consensus contract which is not deployed on StudioNet.
-    const result = await client.simulateWriteContract({
+    // writeContract submits through GenLayer consensus (actually commits state).
+    // simulateWriteContract only simulates — does not persist state.
+    const txHash = await client.writeContract({
       address: contractAddress,
       functionName: method,
       args: callArgs,
     });
 
-    console.info('[Nutrigen /write] simulateWriteContract result:', result);
+    console.info('[Nutrigen /write] writeContract txHash:', txHash);
 
-    return NextResponse.json({ result: result ?? '' });
+    // Wait for consensus (StudioNet typically confirms in <30s with 5 validators).
+    const receipt = await client.waitForTransactionReceipt({ hash: txHash });
+    // GenLayer status 5 = ACCEPTED
+    const genStatus = (receipt as any)?.status;
+    console.info('[Nutrigen /write] receipt status:', genStatus, 'hash:', txHash);
+    if (genStatus !== undefined && genStatus !== 5) {
+      return NextResponse.json({ error: `Transaction rejected by consensus (status ${genStatus})` }, { status: 500 });
+    }
+
+    return NextResponse.json({ result: txHash, receipt });
   } catch (err: any) {
     console.error('[contract/write] error:', err?.message);
     return NextResponse.json({ error: err?.message ?? 'Unknown error' }, { status: 500 });
