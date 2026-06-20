@@ -57,8 +57,6 @@ export async function contractWrite(
   privateKey: string,
   walletAddress?: string,
 ): Promise<string> {
-  getNutrigenContractAddress();
-
   const resp = await fetch('/api/contract/write', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
