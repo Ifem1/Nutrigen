@@ -4,7 +4,7 @@ const RPC = process.env.NEXT_PUBLIC_GENLAYER_RPC_URL || 'https://studio.genlayer
 // Always lowercase — viem rejects mixed-case addresses with invalid EIP-55 checksum.
 const CONTRACT = (
   process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS ||
-  '0xbc24799513516ab71ca2488c8ada94dc4a0e0341'
+  '0x0c5ec297afda24f411500e3e37b82069a9b98c1a'
 ).toLowerCase();
 
 // Call gen_call type=write directly over HTTP.
