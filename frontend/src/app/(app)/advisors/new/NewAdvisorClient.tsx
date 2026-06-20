@@ -51,8 +51,9 @@ export function NewAdvisorClient() {
       const now = new Date().toISOString();
       const metadata_hash = await buildMetadataHash({ ...form, registered_at: now });
 
+      const advisorId = `adv-${crypto.randomUUID()}`;
       const txHash = await registerFeedAdvisor({
-        advisor_id: '',
+        advisor_id: advisorId,
         farm_id: form.farm_id,
         name: form.name,
         credential_summary: form.credential_summary,
@@ -65,9 +66,7 @@ export function NewAdvisorClient() {
       const receipt = await waitForTransaction(txHash);
       if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted: ' + receipt.status);
 
-      const advisorId = (receipt.data as any)?.result ?? txHash;
-
-      await createClient().from('feed_advisors').upsert({
+      const { error: advError } = await createClient().from('feed_advisors').upsert({
         id: advisorId,
         farm_id: form.farm_id,
         name: form.name,
@@ -89,8 +88,10 @@ export function NewAdvisorClient() {
           status: 'ACTIVE',
           registered_by: walletAddress,
           registered_at: now,
+          tx_hash: txHash,
         },
       });
+      if (advError) throw new Error(`Advisor created on-chain but Supabase failed: ${advError.message}`);
 
       router.push('/advisors');
     } catch (err: any) {

@@ -40,17 +40,18 @@ export function NewIngredientClient() {
     setSubmitting(true); setError('');
     try {
       const now = new Date().toISOString();
+      const ingId = `ing-${crypto.randomUUID()}`;
       const metadata_hash = await buildMetadataHash({ ...form, registered_at: now });
-      const txHash = await registerFeedIngredient({ ingredient_id: '', ...form, metadata_hash, registered_at: now }, privateKey, walletAddress);
+      const txHash = await registerFeedIngredient({ ingredient_id: ingId, ...form, metadata_hash, registered_at: now }, privateKey, walletAddress);
       const receipt = await waitForTransaction(txHash);
       if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted');
 
-      const ingId = (receipt.data as any)?.result ?? txHash;
-      await createClient().from('feed_ingredients').upsert({
+      const { error: ingError } = await createClient().from('feed_ingredients').upsert({
         id: ingId, ...form, metadata_hash, status: 'ACTIVE',
         registered_by: walletAddress, registered_at: now,
-        raw_json: { ingredient_id: ingId, ...form, metadata_hash, status: 'ACTIVE', registered_by: walletAddress, registered_at: now },
+        raw_json: { ingredient_id: ingId, ...form, metadata_hash, status: 'ACTIVE', registered_by: walletAddress, registered_at: now, tx_hash: txHash },
       });
+      if (ingError) throw new Error(`Ingredient created on-chain but Supabase failed: ${ingError.message}`);
 
       router.push('/ingredients');
     } catch (err: any) {

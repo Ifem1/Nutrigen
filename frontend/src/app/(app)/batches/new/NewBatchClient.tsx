@@ -40,13 +40,13 @@ export function NewBatchClient() {
     setSubmitting(true); setError('');
     try {
       const now = new Date().toISOString();
+      const batchId = `batch-${crypto.randomUUID()}`;
       const metadata_hash = await buildMetadataHash({ ...form, created_at: now });
-      const txHash = await registerLivestockBatch({ batch_id: '', ...form, metadata_hash, registered_at: now }, privateKey, walletAddress);
+      const txHash = await registerLivestockBatch({ batch_id: batchId, ...form, metadata_hash, registered_at: now }, privateKey, walletAddress);
       const receipt = await waitForTransaction(txHash);
       if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted');
 
-      const batchId = (receipt.data as any)?.result ?? txHash;
-      await createClient().from('livestock_batches').upsert({
+      const { error: batchError } = await createClient().from('livestock_batches').upsert({
         id: batchId, farm_id: form.farm_id, species: form.species,
         breed_summary: form.breed_summary, production_stage: form.production_stage,
         production_goal: form.production_goal, head_count: form.head_count,
@@ -55,8 +55,9 @@ export function NewBatchClient() {
         feeding_constraints: form.feeding_constraints,
         metadata_hash, status: 'ACTIVE',
         registered_by: walletAddress, registered_at: now,
-        raw_json: { batch_id: batchId, ...form, metadata_hash, status: 'ACTIVE', registered_by: walletAddress, registered_at: now },
+        raw_json: { batch_id: batchId, ...form, metadata_hash, status: 'ACTIVE', registered_by: walletAddress, registered_at: now, tx_hash: txHash },
       });
+      if (batchError) throw new Error(`Batch created on-chain but Supabase failed: ${batchError.message}`);
 
       router.push('/batches');
     } catch (err: any) {
