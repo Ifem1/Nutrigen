@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { humanFeedReviewDecision } from '@/lib/genlayer/nutrigenContract';
 import { generateWallet } from '@/lib/nutrigen/wallet';
+import { syncHumanReview } from '@/lib/nutrigen/contractSync';
 
 export default function EscalationDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -51,17 +52,11 @@ export default function EscalationDetailPage() {
     setSubmitting(true);
     setError('');
     try {
-      await humanFeedReviewDecision({ request_id: id, final_verdict: verdict, review_reason: reviewReason, reviewer_notes: reviewerNotes }, wallet.privateKey);
-      const supabase = createClient();
-      await supabase.from('human_feed_reviews').upsert({
-        request_id: id,
-        reviewer_address: wallet.address,
-        verdict,
-        review_reason: reviewReason,
-        reviewer_notes: reviewerNotes,
-        reviewed_at: new Date().toISOString(),
+      const result = await humanFeedReviewDecision({ request_id: id, final_verdict: verdict, review_reason: reviewReason, reviewer_notes: reviewerNotes }, wallet.privateKey);
+      await syncHumanReview(result.txHash, {
+        request_id: id, final_verdict: verdict,
+        review_reason: reviewReason, reviewer_notes: reviewerNotes,
       });
-      await supabase.from('feed_optimization_requests').update({ status: `HUMAN_${verdict}` === 'HUMAN_APPROVED' ? 'HUMAN_APPROVED' : verdict }).eq('request_id', id);
       setSuccess(true);
     } catch (err: any) {
       setError(err.message ?? 'Failed to submit review');

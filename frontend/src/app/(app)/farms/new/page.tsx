@@ -3,11 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
 import { createFarm } from '@/lib/genlayer/nutrigenContract';
 import { generateEntityId } from '@/lib/nutrigen/feedPacket';
 import { generateWallet } from '@/lib/nutrigen/wallet';
+import { syncFarm } from '@/lib/nutrigen/contractSync';
 import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
+import { createClient } from '@/lib/supabase/client';
 
 const FARM_TYPES = ['Poultry', 'Cattle', 'Dairy', 'Swine', 'Aquaculture', 'Mixed', 'Other'];
 
@@ -45,18 +46,11 @@ export default function NewFarmPage() {
       const result = await createFarm({ farm_id: farmId, name, farm_type: farmType, location_context: locationContext, metadata_hash: metadataHash || '' }, wallet.privateKey);
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from('farms').upsert({
-        farm_id: farmId,
-        name,
-        farm_type: farmType,
-        location_context: locationContext,
-        metadata_hash: metadataHash || null,
-        status: 'ACTIVE',
-        owner_address: wallet.address,
-        user_id: user?.id,
-        tx_hash: result.txHash,
-        explorer_url: `${GENLAYER_EXPLORER_URL}/tx/${result.txHash}`,
-      });
+      await syncFarm(result.txHash, {
+        farm_id: farmId, name, farm_type: farmType,
+        location_context: locationContext, owner_wallet: wallet.address,
+        metadata_hash: metadataHash || '',
+      }, user?.id);
       setSuccess({ farmId, txHash: result.txHash });
     } catch (err: any) {
       setError(err.message ?? 'Failed to register farm');

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { getLatestDecisionForRequest, getActivatedFeedPlan, markFeedPlanActivated } from '@/lib/genlayer/nutrigenContract';
 import { GENLAYER_EXPLORER_URL, NUTRIGEN_CONTRACT_ADDRESS } from '@/lib/genlayer/config';
+import { syncActivatedFeedPlan } from '@/lib/nutrigen/contractSync';
 
 const VERDICT_STYLES: Record<string, { bg: string; text: string; border: string }> = {
   APPROVED: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-300' },
@@ -85,9 +86,9 @@ export default function ResultsPage() {
     setActivating(true);
     setError('');
     try {
-      await markFeedPlanActivated({ request_id: id, activation_hash: '0x', activation_summary: 'Feed plan activated via dashboard' }, wallet.privateKey);
-      const supabase = createClient();
-      await supabase.from('activated_feed_plans').upsert({ request_id: id, activated_at: new Date().toISOString(), activated_by: wallet.address });
+      const activationHash = `0x${Date.now().toString(16)}`;
+      const result = await markFeedPlanActivated({ request_id: id, activation_hash: activationHash, activation_summary: 'Feed plan activated via Nutrigen dashboard' }, wallet.privateKey);
+      await syncActivatedFeedPlan(result.txHash, { request_id: id, activation_hash: activationHash, activation_summary: 'Activated via dashboard', activated_by: wallet.address });
       setActivateSuccess(true);
     } catch (err: any) {
       setError(err.message ?? 'Failed to activate plan');

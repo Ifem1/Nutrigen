@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { registerLivestockBatch } from '@/lib/genlayer/nutrigenContract';
 import { generateEntityId } from '@/lib/nutrigen/feedPacket';
 import { generateWallet } from '@/lib/nutrigen/wallet';
+import { syncLivestockBatch } from '@/lib/nutrigen/contractSync';
 import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
 
 const SPECIES = ['Poultry', 'Cattle', 'Sheep', 'Goat', 'Swine', 'Fish', 'Other'];
@@ -53,23 +54,13 @@ export default function NewBatchPage() {
       const result = await registerLivestockBatch({ batch_id: batchId, farm_id: farmId, species, breed_summary: breedSummary, production_stage: productionStage, production_goal: productionGoal, head_count: parseInt(headCount), weight_summary: weightSummary, health_status_summary: healthStatusSummary, feeding_constraints: feedingConstraints }, wallet.privateKey);
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from('livestock_batches').upsert({
-        batch_id: batchId,
-        farm_id: selectedFarm?.id,
-        farm_chain_id: farmId,
-        species,
-        breed_summary: breedSummary,
-        production_stage: productionStage,
-        production_goal: productionGoal,
-        head_count: parseInt(headCount),
-        weight_summary: weightSummary,
-        health_status_summary: healthStatusSummary,
+      await syncLivestockBatch(result.txHash, {
+        batch_id: batchId, farm_id: farmId, species,
+        breed_summary: breedSummary, production_stage: productionStage,
+        production_goal: productionGoal, head_count: parseInt(headCount),
+        weight_summary: weightSummary, health_status_summary: healthStatusSummary,
         feeding_constraints: feedingConstraints,
-        status: 'ACTIVE',
-        user_id: user?.id,
-        tx_hash: result.txHash,
-        explorer_url: `${GENLAYER_EXPLORER_URL}/tx/${result.txHash}`,
-      });
+      }, user?.id);
       setSuccess({ batchId, txHash: result.txHash });
     } catch (err: any) {
       setError(err.message ?? 'Failed to register batch');

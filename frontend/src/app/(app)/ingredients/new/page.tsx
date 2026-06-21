@@ -6,6 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { registerFeedIngredient } from '@/lib/genlayer/nutrigenContract';
 import { generateEntityId } from '@/lib/nutrigen/feedPacket';
 import { generateWallet } from '@/lib/nutrigen/wallet';
+import { syncFeedIngredient } from '@/lib/nutrigen/contractSync';
 import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
 
 const CATEGORIES = ['Cereal', 'Protein Meal', 'Roughage', 'Mineral', 'Vitamin Premix', 'Oil', 'By-product', 'Other'];
@@ -50,21 +51,11 @@ export default function NewIngredientPage() {
       const result = await registerFeedIngredient({ ingredient_id: ingredientId, farm_id: farmId, name, category, nutrient_profile_summary: nutrientProfile, safety_summary: safetySummary, availability_summary: availabilitySummary, cost_summary: costSummary }, wallet.privateKey);
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from('feed_ingredients').upsert({
-        ingredient_id: ingredientId,
-        farm_id: selectedFarm?.id,
-        farm_chain_id: farmId,
-        name,
-        category,
-        nutrient_profile_summary: nutrientProfile,
-        safety_summary: safetySummary,
-        availability_summary: availabilitySummary,
-        cost_summary: costSummary,
-        status: 'ACTIVE',
-        user_id: user?.id,
-        tx_hash: result.txHash,
-        explorer_url: `${GENLAYER_EXPLORER_URL}/tx/${result.txHash}`,
-      });
+      await syncFeedIngredient(result.txHash, {
+        ingredient_id: ingredientId, farm_id: farmId, name, category,
+        nutrient_profile_summary: nutrientProfile, safety_summary: safetySummary,
+        availability_summary: availabilitySummary, cost_summary: costSummary,
+      }, user?.id);
       setSuccess({ ingredientId, txHash: result.txHash });
     } catch (err: any) {
       setError(err.message ?? 'Failed to register ingredient');

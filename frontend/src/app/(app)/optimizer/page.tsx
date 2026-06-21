@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { submitAndOptimizeFeed } from '@/lib/genlayer/nutrigenContract';
 import { buildFeedPacket, hashFeedPacket, generateRequestId } from '@/lib/nutrigen/feedPacket';
 import { generateWallet } from '@/lib/nutrigen/wallet';
+import { syncOptimizationRequest, syncFeedDecision } from '@/lib/nutrigen/contractSync';
 import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
 
 interface Farm { id: string; farm_id: string; name: string; }
@@ -124,19 +125,22 @@ export default function OptimizerPage() {
 
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from('feed_optimization_requests').upsert({
-        request_id: requestId,
-        farm_chain_id: farmId,
-        batch_chain_id: batchId,
-        advisor_chain_id: advisorId,
-        ingredient_ids: selectedIngredients,
-        standard_id: standardId,
-        ration_hash: rationHash,
-        status: 'PENDING',
-        user_id: user?.id,
-        tx_hash: result.txHash,
-        explorer_url: `${GENLAYER_EXPLORER_URL}/tx/${result.txHash}`,
-      });
+      await syncOptimizationRequest(result.txHash, {
+        request_id: requestId, farm_id: farmId, batch_id: batchId,
+        advisor_id: advisorId, standard_ids_csv: standardId,
+        ingredient_ids_csv: selectedIngredients.join(','),
+        objective_summary: objectiveSummary, current_feeding_summary: currentFeedingSummary,
+        available_feed_summary: availableFeedSummary, candidate_ration_summary: candidateRationSummary,
+        nutrient_analysis_summary: nutrientAnalysisSummary, cost_constraint_summary: costConstraintSummary,
+        supply_constraint_summary: supplyConstraintSummary, health_context_summary: healthContextSummary,
+        environment_context_summary: environmentContextSummary,
+        evidence_manifest_hash: evidenceManifestHash || '', ration_hash: rationHash,
+      }, user?.id);
+
+      // Sync the decision that came back from GenLayer consensus
+      if (result.data && typeof result.data === 'object') {
+        await syncFeedDecision(result.txHash, requestId, result.data as Record<string, unknown>);
+      }
 
       setSubmitted({ requestId, txHash: result.txHash });
       setTimeout(() => router.push(`/results/${requestId}`), 2000);
