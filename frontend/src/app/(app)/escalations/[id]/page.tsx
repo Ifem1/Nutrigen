@@ -1,183 +1,173 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import { Button, Card, CardHeader, CardTitle, Spinner } from '@/components/ui';
-import { useAuthStore } from '@/store/authStore';
-import { getEscalation, getLatestDecisionForRequest, humanFeedReviewDecision, waitForTransaction } from '@/lib/genlayer/client';
-import { buildMetadataHash } from '@/lib/nutrigen/feedPacket';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { toast } from 'sonner';
-import type { Escalation, FeedDecision } from '@/lib/genlayer/types';
+import { humanFeedReviewDecision } from '@/lib/genlayer/nutrigenContract';
+import { generateWallet } from '@/lib/nutrigen/wallet';
 
 export default function EscalationDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
-  const { walletAddress } = useAuthStore();
-
-  const [escalation, setEscalation] = useState<Escalation | null>(null);
-  const [decision, setDecision] = useState<FeedDecision | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [request, setRequest] = useState<any>(null);
+  const [decision, setDecision] = useState<any>(null);
+  const [wallet, setWallet] = useState<{ address: string; privateKey: string } | null>(null);
   const [verdict, setVerdict] = useState('APPROVED');
-  const [reason, setReason] = useState('');
-  const [notes, setNotes] = useState('');
+  const [reviewReason, setReviewReason] = useState('');
+  const [reviewerNotes, setReviewerNotes] = useState('');
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      getEscalation(id),
-      getLatestDecisionForRequest(id),
-    ]).then(([esc, dec]) => {
-      setEscalation(esc);
+    const stored = sessionStorage.getItem('nutrigen_wallet');
+    if (stored) setWallet(JSON.parse(stored));
+  }, []);
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient();
+      const [{ data: req }, { data: dec }] = await Promise.all([
+        supabase.from('feed_optimization_requests').select('*, farms(name), livestock_batches(species, production_stage)').eq('request_id', id).single(),
+        supabase.from('feed_decisions').select('*').eq('request_id', id).order('created_at', { ascending: false }).limit(1).single(),
+      ]);
+      setRequest(req);
       setDecision(dec);
       setLoading(false);
-    });
+    }
+    load();
   }, [id]);
 
-  async function handleReview(e: React.FormEvent) {
+  function handleGenerateWallet() {
+    const w = generateWallet();
+    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    setWallet(w);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const privateKey = sessionStorage.getItem('nutrigen_pk') ?? '';
-    if (!privateKey || !walletAddress) { toast.error('Wallet not connected.'); return; }
+    if (!wallet || !reviewReason) return;
     setSubmitting(true);
+    setError('');
     try {
-      const now = new Date().toISOString();
-      const review_evidence_hash = await buildMetadataHash({ request_id: id, verdict, reason, reviewer: walletAddress, decided_at: now });
-
-      const txHash = await humanFeedReviewDecision({
-        request_id: id, final_verdict: verdict,
-        review_reason: reason, review_evidence_hash,
-        reviewer_notes: notes, decided_at: now,
-      }, privateKey);
-
-      const receipt = await waitForTransaction(txHash);
-      if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted');
-
-      await createClient().from('human_feed_reviews').upsert({
-        request_id: id, farm_id: escalation?.farm_id ?? '',
-        reviewer: walletAddress, final_verdict: verdict,
-        request_status: verdict === 'APPROVED' ? 'HUMAN_APPROVED' : verdict === 'REJECTED' ? 'HUMAN_REJECTED' : 'NEEDS_REVISION',
-        review_reason: reason, review_evidence_hash, reviewer_notes: notes,
-        decided_at: now,
-        raw_json: { request_id: id, final_verdict: verdict, review_reason: reason, review_evidence_hash, reviewer_notes: notes, decided_at: now },
+      await humanFeedReviewDecision({ request_id: id, final_verdict: verdict, review_reason: reviewReason, reviewer_notes: reviewerNotes }, wallet.privateKey);
+      const supabase = createClient();
+      await supabase.from('human_feed_reviews').upsert({
+        request_id: id,
+        reviewer_address: wallet.address,
+        verdict,
+        review_reason: reviewReason,
+        reviewer_notes: reviewerNotes,
+        reviewed_at: new Date().toISOString(),
       });
-
-      toast.success('Human review decision submitted.');
-      router.push(`/results/${id}`);
+      await supabase.from('feed_optimization_requests').update({ status: `HUMAN_${verdict}` === 'HUMAN_APPROVED' ? 'HUMAN_APPROVED' : verdict }).eq('request_id', id);
+      setSuccess(true);
     } catch (err: any) {
-      toast.error(err?.message ?? 'Failed to submit review.');
+      setError(err.message ?? 'Failed to submit review');
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (loading) return <div className="flex justify-center py-20"><Spinner size="lg" /></div>;
-  if (!escalation) return <p className="py-20 text-center text-muted-foreground">Escalation not found for request {id}.</p>;
+  if (loading) return <div className="p-8 text-center text-gray-400 text-sm">Loading...</div>;
 
-  const rev = decision?.feed_optimization_review;
-  const isResolved = escalation.status === 'CLOSED';
+  if (success) {
+    return (
+      <div className="max-w-lg mx-auto">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center">
+          <div className="text-5xl mb-4">✅</div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Review Submitted</h2>
+          <p className="text-sm text-gray-600 mb-5">Your review has been recorded on the blockchain.</p>
+          <Link href={`/results/${id}`} className="bg-green-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-green-700 transition-colors">View Results →</Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <Button variant="ghost" size="sm" leftIcon={<ArrowLeft className="h-4 w-4" />}
-        onClick={() => router.push('/escalations')}>Back</Button>
-
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-bold text-foreground">Human Feed Review</h2>
-          <p className="font-mono text-sm text-muted-foreground">{id}</p>
-        </div>
-        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-          isResolved ? 'border-green-200 bg-green-50 text-green-700' : 'border-orange-200 bg-orange-50 text-orange-700'
-        }`}>{isResolved ? 'CLOSED' : 'OPEN'}</span>
+    <div className="max-w-3xl mx-auto">
+      <div className="flex items-center gap-3 mb-6">
+        <Link href="/escalations" className="text-gray-400 hover:text-gray-600 text-sm">Pending Reviews</Link>
+        <span className="text-gray-300">/</span>
+        <span className="text-gray-900 text-sm font-mono">{id?.slice(0, 16)}...</span>
       </div>
 
-      {/* Escalation reason */}
-      <Card padding="md">
-        <CardHeader><CardTitle>Escalation Reason</CardTitle></CardHeader>
-        <p className="text-sm">{escalation.reason}</p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Escalated by {escalation.opened_by} at {escalation.opened_at}
-        </p>
-      </Card>
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">Human Expert Review</h1>
+      <p className="text-gray-500 text-sm mb-6">Review the AI decision and provide your expert verdict</p>
 
-      {/* AI decision summary */}
-      {rev && (
-        <Card padding="md" className="space-y-3">
-          <CardHeader><CardTitle>AI Consensus Summary</CardTitle></CardHeader>
-          <div className="grid grid-cols-4 gap-2 text-center text-xs">
-            {[
-              { label: 'Nutrient Adequacy', v: rev.nutrient_adequacy_score },
-              { label: 'Safety', v: rev.safety_score },
-              { label: 'Cost Efficiency', v: rev.cost_efficiency_score },
-              { label: 'Risk', v: rev.risk_score },
-            ].map(({ label, v }) => (
-              <div key={label} className="rounded bg-secondary/60 p-2">
-                <p className="font-bold">{v}</p>
-                <p className="text-muted-foreground">{label}</p>
-              </div>
+      {/* Request Summary */}
+      {request && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm mb-5">
+          <h2 className="font-semibold text-gray-900 mb-3">Request Summary</h2>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div><span className="text-gray-500">Farm: </span><span className="font-medium">{(request.farms as any)?.name}</span></div>
+            <div><span className="text-gray-500">Species: </span><span className="font-medium">{(request.livestock_batches as any)?.species}</span></div>
+            <div><span className="text-gray-500">Stage: </span><span className="font-medium">{(request.livestock_batches as any)?.production_stage}</span></div>
+            <div><span className="text-gray-500">AI Status: </span><span className="font-medium text-yellow-600">{request.status}</span></div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Decision Summary */}
+      {decision && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 shadow-sm mb-5">
+          <h2 className="font-semibold text-gray-800 mb-3">AI Decision Summary</h2>
+          {decision.rationale && <p className="text-sm text-gray-700 mb-3">{decision.rationale}</p>}
+          {decision.required_changes && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Required Changes Flagged by AI</p>
+              <p className="text-sm text-gray-700">{Array.isArray(decision.required_changes) ? decision.required_changes.join('; ') : decision.required_changes}</p>
+            </div>
+          )}
+          <div className="mt-3">
+            <Link href={`/results/${id}`} className="text-green-600 hover:underline text-sm">View full AI analysis →</Link>
+          </div>
+        </div>
+      )}
+
+      {!wallet ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center mb-5">
+          <div className="text-3xl mb-3">🔑</div>
+          <h2 className="font-semibold text-gray-900 mb-2">Wallet Required</h2>
+          <p className="text-sm text-gray-600 mb-4">You need a wallet to sign and submit your review on-chain.</p>
+          <button onClick={handleGenerateWallet} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors">Generate Wallet</button>
+        </div>
+      ) : (
+        <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2 mb-5 text-xs text-green-700">
+          Reviewer wallet: <span className="font-mono">{wallet.address}</span>
+        </div>
+      )}
+
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mb-5 text-sm">{error}</div>}
+
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 p-6 space-y-5 shadow-sm">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Final Verdict <span className="text-red-500">*</span></label>
+          <div className="flex gap-3">
+            {['APPROVED', 'REJECTED', 'NEEDS_REVISION'].map(v => (
+              <label key={v} className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border-2 cursor-pointer transition-all ${verdict === v ? (v === 'APPROVED' ? 'border-green-500 bg-green-50' : v === 'REJECTED' ? 'border-red-500 bg-red-50' : 'border-orange-500 bg-orange-50') : 'border-gray-200 hover:border-gray-300'}`}>
+                <input type="radio" name="verdict" value={v} checked={verdict === v} onChange={() => setVerdict(v)} className="sr-only" />
+                <span className="text-sm font-medium">{v.replace('_', ' ')}</span>
+              </label>
             ))}
           </div>
-          <div>
-            <p className="mb-1 text-xs font-semibold text-muted-foreground">Recommended Ration</p>
-            <p className="text-sm">{rev.recommended_ration_summary}</p>
-          </div>
-          {rev.health_warnings.length > 0 && (
-            <div>
-              <p className="mb-1 text-xs font-semibold text-muted-foreground">Health Warnings</p>
-              {rev.health_warnings.map((w, i) => <p key={i} className="text-sm text-red-700">• {w}</p>)}
-            </div>
-          )}
-          {rev.required_changes.length > 0 && (
-            <div>
-              <p className="mb-1 text-xs font-semibold text-muted-foreground">Required Changes</p>
-              {rev.required_changes.map((c, i) => <p key={i} className="text-sm text-orange-700">• {c}</p>)}
-            </div>
-          )}
-          <div>
-            <p className="mb-1 text-xs font-semibold text-muted-foreground">AI Rationale</p>
-            <p className="text-sm">{rev.rationale}</p>
-          </div>
-        </Card>
-      )}
-
-      {/* Human review form */}
-      {!isResolved ? (
-        <Card padding="md">
-          <CardHeader><CardTitle>Your Human Review Decision</CardTitle></CardHeader>
-          <form onSubmit={handleReview} className="space-y-4">
-            <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Final verdict *</label>
-              <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                value={verdict} onChange={(e) => setVerdict(e.target.value)}>
-                <option value="APPROVED">APPROVED — Safe to implement</option>
-                <option value="REJECTED">REJECTED — Do not implement</option>
-                <option value="NEEDS_REVISION">NEEDS_REVISION — Rebalance required</option>
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Review reason *</label>
-              <textarea className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                rows={3} value={reason} onChange={(e) => setReason(e.target.value)} required
-                placeholder="e.g. Reviewed with farm vet. Soybean inclusion is safe at 30% for this breed. Confirmed Ca:P ratio acceptable." />
-            </div>
-            <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Reviewer notes</label>
-              <textarea className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-                placeholder="Additional notes for the farmer or feed advisor." />
-            </div>
-            <div className="flex justify-end">
-              <Button type="submit" loading={submitting}>Submit Review Decision</Button>
-            </div>
-          </form>
-        </Card>
-      ) : (
-        <Card padding="md" className="bg-green-50 border border-green-200">
-          <p className="font-semibold text-green-800">Review closed</p>
-          {escalation.close_reason && <p className="mt-1 text-sm text-green-700">{escalation.close_reason}</p>}
-        </Card>
-      )}
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Review Reason <span className="text-red-500">*</span></label>
+          <textarea required value={reviewReason} onChange={e => setReviewReason(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Explain the basis for your review decision, referencing nutritional evidence or safety concerns..." />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Reviewer Notes</label>
+          <textarea value={reviewerNotes} onChange={e => setReviewerNotes(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Additional technical notes, recommended modifications, follow-up instructions..." />
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button type="submit" disabled={submitting || !wallet} className="flex-1 bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white py-2.5 rounded-lg font-semibold transition-colors">
+            {submitting ? 'Submitting review...' : 'Submit Expert Review'}
+          </button>
+          <Link href="/escalations" className="px-5 py-2.5 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors">Cancel</Link>
+        </div>
+      </form>
     </div>
   );
 }

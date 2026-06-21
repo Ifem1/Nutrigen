@@ -1,27 +1,36 @@
-// TypeScript types matching NutrigenContract v0.2.18 on-chain data shapes
+// GenLayer / NutrigenContract TypeScript types
+
+export type FarmStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
+export type BatchStatus = "ACTIVE" | "INACTIVE" | "CULLED";
+export type IngredientStatus = "ACTIVE" | "INACTIVE" | "RECALLED";
+export type StandardStatus = "DRAFT" | "ACTIVE" | "DEPRECATED" | "REVOKED";
+export type AdvisorStatus = "ACTIVE" | "INACTIVE" | "SUSPENDED";
+export type RequestStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED"
+  | "NEEDS_REVIEW"
+  | "NEEDS_REVISION"
+  | "HUMAN_APPROVED"
+  | "HUMAN_REJECTED"
+  | "ACTIVATED"
+  | "BLOCKED";
+export type Verdict = "APPROVED" | "REJECTED" | "NEEDS_REVIEW" | "NEEDS_REVISION";
+export type HumanVerdict = "APPROVED" | "REJECTED" | "NEEDS_REVISION";
+export type RiskBand = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+export type FarmRole = "owner" | "admin" | "manager" | "reviewer" | "viewer" | "none";
 
 export interface Farm {
   farm_id: string;
   name: string;
   farm_type: string;
   location_context: string;
+  owner: string;
   metadata_hash: string;
-  status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
-  created_by: string;
+  status: FarmStatus;
+  optimization_config: Record<string, unknown>;
   created_at: string;
-  updated_at?: string;
-  optimization_config: OptimizationConfig;
-}
-
-export interface OptimizationConfig {
-  min_approve_nutrient_adequacy: string;
-  min_approve_suitability: string;
-  min_approve_safety: string;
-  min_approve_availability: string;
-  min_approve_practicality: string;
-  max_approve_risk: string;
-  auto_review_risk: string;
-  auto_reject_risk: string;
+  updated_at: string;
 }
 
 export interface FeedAdvisor {
@@ -32,10 +41,9 @@ export interface FeedAdvisor {
   scope_summary: string;
   wallet: string;
   metadata_hash: string;
-  status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED' | 'ARCHIVED';
-  registered_by: string;
+  status: AdvisorStatus;
   registered_at: string;
-  updated_at?: string;
+  updated_at: string;
 }
 
 export interface LivestockBatch {
@@ -45,15 +53,14 @@ export interface LivestockBatch {
   breed_summary: string;
   production_stage: string;
   production_goal: string;
-  head_count: string;
+  head_count: number;
   weight_summary: string;
   health_status_summary: string;
   feeding_constraints: string;
   metadata_hash: string;
-  status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED';
-  registered_by: string;
+  status: BatchStatus;
   registered_at: string;
-  updated_at?: string;
+  updated_at: string;
 }
 
 export interface FeedIngredient {
@@ -66,10 +73,9 @@ export interface FeedIngredient {
   availability_summary: string;
   cost_summary: string;
   metadata_hash: string;
-  status: 'ACTIVE' | 'UNAVAILABLE' | 'SUSPENDED' | 'ARCHIVED';
-  registered_by: string;
+  status: IngredientStatus;
   registered_at: string;
-  updated_at?: string;
+  updated_at: string;
 }
 
 export interface FeedStandardVersion {
@@ -79,7 +85,7 @@ export interface FeedStandardVersion {
   title: string;
   species_scope: string;
   production_stage_scope: string;
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  severity: string;
   nutrient_target_rules: string;
   ingredient_limit_rules: string;
   toxin_and_anti_nutrient_rules: string;
@@ -87,23 +93,11 @@ export interface FeedStandardVersion {
   cost_and_availability_rules: string;
   standard_hash: string;
   metadata_hash: string;
-  status: 'ACTIVE' | 'DEPRECATED' | 'ARCHIVED';
-  published_by: string;
+  status: StandardStatus;
+  is_current: boolean;
   published_at: string;
-  updated_at?: string;
+  updated_at: string;
 }
-
-export type RequestStatus =
-  | 'PENDING'
-  | 'RETRY_PENDING'
-  | 'APPROVED'
-  | 'REJECTED'
-  | 'NEEDS_REVIEW'
-  | 'NEEDS_REVISION'
-  | 'HUMAN_APPROVED'
-  | 'HUMAN_REJECTED'
-  | 'ACTIVATED'
-  | 'BLOCKED';
 
 export interface OptimizationRequest {
   request_id: string;
@@ -123,24 +117,18 @@ export interface OptimizationRequest {
   environment_context_summary: string;
   evidence_manifest_hash: string;
   ration_hash: string;
-  submitted_by: string;
+  status: RequestStatus;
+  last_decision_id: string;
+  human_decided_at: string;
+  activated_at: string;
+  blocked_at: string;
   submitted_at: string;
   expires_at: string;
-  status: RequestStatus;
-  last_decision_id?: string;
-  adjudicated_at?: string;
-  human_review_id?: string;
-  human_decided_at?: string;
-  activation_id?: string;
-  activated_at?: string;
-  blocked_reason?: string;
-  blocked_at?: string;
 }
 
-export type Verdict = 'APPROVED' | 'REJECTED' | 'NEEDS_REVIEW' | 'NEEDS_REVISION';
-export type RiskBand = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
-
-export interface FeedOptimizationReview {
+export interface FeedDecision {
+  decision_id: string;
+  request_id: string;
   verdict: Verdict;
   nutrient_adequacy_score: number;
   livestock_suitability_score: number;
@@ -166,49 +154,18 @@ export interface FeedOptimizationReview {
   availability_findings: string[];
   required_changes: string[];
   strengths: string[];
-  feeding_instructions: string[];
-  monitoring_notes: string[];
+  feeding_instructions: string;
+  monitoring_notes: string;
   rationale: string;
   audit_summary: string;
   confidence: number;
-}
-
-export interface FeedDecision {
-  decision_id: string;
-  request_id: string;
-  farm_id: string;
-  batch_id: string;
-  advisor_id: string;
-  verdict: Verdict;
-  request_status: RequestStatus;
-  feed_optimization_review: FeedOptimizationReview;
-  adjudicated_by: string;
   adjudicated_at: string;
 }
 
-export interface Escalation {
-  escalation_id: string;
-  request_id: string;
-  farm_id: string;
-  batch_id: string;
-  advisor_id: string;
-  decision_id: string;
-  status: 'OPEN' | 'CLOSED';
-  reason: string;
-  opened_at: string;
-  opened_by: string;
-  closed_by?: string;
-  closed_at?: string;
-  close_reason?: string;
-}
-
 export interface HumanFeedReview {
-  human_review_id: string;
   request_id: string;
-  farm_id: string;
-  reviewer: string;
-  final_verdict: Verdict;
-  request_status: RequestStatus;
+  reviewer_wallet: string;
+  final_verdict: HumanVerdict;
   review_reason: string;
   review_evidence_hash: string;
   reviewer_notes: string;
@@ -216,14 +173,10 @@ export interface HumanFeedReview {
 }
 
 export interface ActivatedFeedPlan {
-  activation_id: string;
   request_id: string;
-  farm_id: string;
-  batch_id: string;
-  advisor_id: string;
+  activated_by: string;
   activation_hash: string;
   activation_summary: string;
-  activated_by: string;
   activated_at: string;
 }
 
@@ -235,27 +188,26 @@ export interface AuditLog {
   actor: string;
   summary: string;
   data_hash: string;
-  created_at: string;
-}
-
-export interface ReviewerReputation {
-  farm_id: string;
-  reviewer: string;
-  reviews: number;
-  accepted_reviews: number;
-  rejected_reviews: number;
-  last_reviewed_at: string;
+  logged_at: string;
 }
 
 export interface ContractSummary {
   owner: string;
   paused: boolean;
-  farm_counter: string;
-  advisor_counter: string;
-  batch_counter: string;
-  ingredient_counter: string;
-  standard_counter: string;
-  request_counter: string;
-  decision_counter: string;
-  audit_counter: string;
+  total_farms: number;
+  total_advisors: number;
+  total_batches: number;
+  total_ingredients: number;
+  total_requests: number;
+  total_decisions: number;
+  total_activated_plans: number;
+  total_human_reviews: number;
+  version: string;
+}
+
+export interface ContractCallResult<T = unknown> {
+  txHash: string;
+  explorerUrl: string;
+  data?: T;
+  error?: string;
 }

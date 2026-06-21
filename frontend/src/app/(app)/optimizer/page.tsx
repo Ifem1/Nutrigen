@@ -1,289 +1,342 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { FlaskConical, Loader2 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui';
-import { Button } from '@/components/ui/Button';
-import { useAuthStore } from '@/store/authStore';
-import { submitAndOptimizeFeed, waitForTransaction } from '@/lib/genlayer/client';
-import { buildRationHash, buildEvidenceManifestHash } from '@/lib/nutrigen/feedPacket';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
-import { toast } from 'sonner';
+import { submitAndOptimizeFeed } from '@/lib/genlayer/nutrigenContract';
+import { buildFeedPacket, hashFeedPacket, generateRequestId } from '@/lib/nutrigen/feedPacket';
+import { generateWallet } from '@/lib/nutrigen/wallet';
+import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
 
-interface SelectItem { id: string; label: string; }
+interface Farm { id: string; farm_id: string; name: string; }
+interface Batch { id: string; batch_id: string; species: string; production_stage: string; farm_chain_id: string; }
+interface Advisor { id: string; advisor_id: string; name: string; farm_chain_id: string; }
+interface Ingredient { id: string; ingredient_id: string; name: string; category: string; }
+interface Standard { id: string; standard_id: string; title: string; version: string; }
 
 export default function OptimizerPage() {
   const router = useRouter();
-  const { walletAddress } = useAuthStore();
+  const [step, setStep] = useState(1);
+  const [wallet, setWallet] = useState<{ address: string; privateKey: string } | null>(null);
 
-  const [farms, setFarms] = useState<SelectItem[]>([]);
-  const [batches, setBatches] = useState<SelectItem[]>([]);
-  const [advisors, setAdvisors] = useState<SelectItem[]>([]);
-  const [standards, setStandards] = useState<SelectItem[]>([]);
-  const [ingredients, setIngredients] = useState<SelectItem[]>([]);
-
+  // Step 1
+  const [farms, setFarms] = useState<Farm[]>([]);
   const [farmId, setFarmId] = useState('');
+  const [batches, setBatches] = useState<Batch[]>([]);
   const [batchId, setBatchId] = useState('');
+  const [advisors, setAdvisors] = useState<Advisor[]>([]);
   const [advisorId, setAdvisorId] = useState('');
-  const [selectedStandards, setSelectedStandards] = useState<string[]>([]);
+
+  // Step 2
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [selectedIngredients, setSelectedIngredients] = useState<string[]>([]);
+  const [standards, setStandards] = useState<Standard[]>([]);
+  const [standardId, setStandardId] = useState('');
 
-  const [form, setForm] = useState({
-    objective_summary: '',
-    current_feeding_summary: '',
-    available_feed_summary: '',
-    candidate_ration_summary: '',
-    nutrient_analysis_summary: '',
-    cost_constraint_summary: '',
-    supply_constraint_summary: '',
-    health_context_summary: '',
-    environment_context_summary: '',
-  });
+  // Step 3
+  const [objectiveSummary, setObjectiveSummary] = useState('');
+  const [currentFeedingSummary, setCurrentFeedingSummary] = useState('');
+  const [availableFeedSummary, setAvailableFeedSummary] = useState('');
+  const [candidateRationSummary, setCandidateRationSummary] = useState('');
+  const [nutrientAnalysisSummary, setNutrientAnalysisSummary] = useState('');
 
-  const [submitting, setSubmitting] = useState(false);
-  const [txStatus, setTxStatus] = useState('');
+  // Step 4
+  const [costConstraintSummary, setCostConstraintSummary] = useState('');
+  const [supplyConstraintSummary, setSupplyConstraintSummary] = useState('');
+  const [healthContextSummary, setHealthContextSummary] = useState('');
+  const [environmentContextSummary, setEnvironmentContextSummary] = useState('');
+  const [evidenceManifestHash, setEvidenceManifestHash] = useState('');
 
-  // Load farms
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [submitted, setSubmitted] = useState<{ requestId: string; txHash: string } | null>(null);
+
   useEffect(() => {
-    createClient().from('farms').select('id, name').eq('status', 'ACTIVE')
-      .then(({ data }) => setFarms((data ?? []).map((f: any) => ({ id: f.id, label: f.name }))));
+    const stored = sessionStorage.getItem('nutrigen_wallet');
+    if (stored) setWallet(JSON.parse(stored));
+    const supabase = createClient();
+    supabase.from('farms').select('id, farm_id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
   }, []);
 
-  // Load batches/advisors/standards/ingredients when farm changes
   useEffect(() => {
-    if (!farmId) { setBatches([]); setAdvisors([]); setStandards([]); setIngredients([]); return; }
-    const sb = createClient();
-    Promise.all([
-      sb.from('livestock_batches').select('id, species, production_stage').eq('farm_id', farmId).eq('status', 'ACTIVE'),
-      sb.from('feed_advisors').select('id, name').eq('farm_id', farmId).eq('status', 'ACTIVE'),
-      sb.from('feed_standard_versions').select('standard_id, version, title').eq('farm_id', farmId).eq('status', 'ACTIVE').eq('is_current', true),
-      sb.from('feed_ingredients').select('id, name').eq('farm_id', farmId).eq('status', 'ACTIVE'),
-    ]).then(([b, a, s, i]) => {
-      setBatches((b.data ?? []).map((x: any) => ({ id: x.id, label: `${x.species} — ${x.production_stage} (${x.id})` })));
-      setAdvisors((a.data ?? []).map((x: any) => ({ id: x.id, label: `${x.name} (${x.id})` })));
-      setStandards((s.data ?? []).map((x: any) => ({ id: x.standard_id, label: `${x.title} v${x.version}` })));
-      setIngredients((i.data ?? []).map((x: any) => ({ id: x.id, label: x.name })));
-      setBatchId(''); setAdvisorId(''); setSelectedStandards([]); setSelectedIngredients([]);
-    });
+    if (!farmId) { setBatches([]); setAdvisors([]); setIngredients([]); setStandards([]); return; }
+    const supabase = createClient();
+    supabase.from('livestock_batches').select('id, batch_id, species, production_stage, farm_chain_id').eq('farm_chain_id', farmId).then(({ data }) => setBatches(data ?? []));
+    supabase.from('feed_advisors').select('id, advisor_id, name, farm_chain_id').eq('farm_chain_id', farmId).then(({ data }) => setAdvisors(data ?? []));
+    supabase.from('feed_ingredients').select('id, ingredient_id, name, category').eq('farm_chain_id', farmId).then(({ data }) => setIngredients(data ?? []));
+    supabase.from('feed_standard_versions').select('id, standard_id, title, version').eq('farm_chain_id', farmId).then(({ data }) => setStandards(data ?? []));
   }, [farmId]);
 
-  function toggleMulti(list: string[], setList: (l: string[]) => void, val: string) {
-    setList(list.includes(val) ? list.filter((v) => v !== val) : [...list, val]);
+  function handleGenerateWallet() {
+    const w = generateWallet();
+    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    setWallet(w);
   }
 
-  function setF(k: string, v: string) { setForm((f) => ({ ...f, [k]: v })); }
+  function toggleIngredient(ingId: string) {
+    setSelectedIngredients(prev => prev.includes(ingId) ? prev.filter(i => i !== ingId) : [...prev, ingId]);
+  }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!farmId || !batchId || !advisorId || !selectedStandards.length || !selectedIngredients.length) {
-      toast.error('Select farm, batch, advisor, at least one standard and one ingredient.');
-      return;
-    }
-    const privateKey = sessionStorage.getItem('nutrigen_pk') ?? '';
-    if (!privateKey || !walletAddress) { toast.error('Wallet not connected. Please re-login.'); return; }
-
-    setSubmitting(true);
+  async function handleSubmit() {
+    if (!wallet) return;
+    setError('');
+    setLoading(true);
     try {
-      const now = new Date().toISOString();
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-      const standard_ids_csv = selectedStandards.join(',');
-      const ingredient_ids_csv = selectedIngredients.join(',');
+      const requestId = generateRequestId(farmId, batchId);
+      const packet = buildFeedPacket({
+        farm_id: farmId,
+        batch_id: batchId,
+        advisor_id: advisorId,
+        ingredient_ids_csv: selectedIngredients.join(','),
+        standard_ids_csv: standardId,
+        objective_summary: objectiveSummary,
+        current_feeding_summary: currentFeedingSummary,
+        available_feed_summary: availableFeedSummary,
+        candidate_ration_summary: candidateRationSummary,
+        nutrient_analysis_summary: nutrientAnalysisSummary,
+        cost_constraint_summary: costConstraintSummary,
+        supply_constraint_summary: supplyConstraintSummary,
+        health_context_summary: healthContextSummary,
+        environment_context_summary: environmentContextSummary,
+      });
+      const rationHash = await hashFeedPacket(packet);
 
-      const ration_hash = await buildRationHash({
-        farm_id: farmId, batch_id: batchId, advisor_id: advisorId,
-        standard_ids_csv, ingredient_ids_csv,
-        objective_summary: form.objective_summary,
-        candidate_ration_summary: form.candidate_ration_summary,
-        nutrient_analysis_summary: form.nutrient_analysis_summary,
+      const result = await submitAndOptimizeFeed({
+        request_id: requestId,
+        farm_id: farmId,
+        batch_id: batchId,
+        advisor_id: advisorId,
+        standard_ids_csv: standardId,
+        ingredient_ids_csv: selectedIngredients.join(','),
+        objective_summary: objectiveSummary,
+        current_feeding_summary: currentFeedingSummary,
+        available_feed_summary: availableFeedSummary,
+        candidate_ration_summary: candidateRationSummary,
+        nutrient_analysis_summary: nutrientAnalysisSummary,
+        cost_constraint_summary: costConstraintSummary,
+        supply_constraint_summary: supplyConstraintSummary,
+        health_context_summary: healthContextSummary,
+        environment_context_summary: environmentContextSummary,
+        evidence_manifest_hash: evidenceManifestHash || '',
+        ration_hash: rationHash,
+      }, wallet.privateKey);
+
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from('feed_optimization_requests').upsert({
+        request_id: requestId,
+        farm_chain_id: farmId,
+        batch_chain_id: batchId,
+        advisor_chain_id: advisorId,
+        ingredient_ids: selectedIngredients,
+        standard_id: standardId,
+        ration_hash: rationHash,
+        status: 'PENDING',
+        user_id: user?.id,
+        tx_hash: result.txHash,
+        explorer_url: `${GENLAYER_EXPLORER_URL}/tx/${result.txHash}`,
       });
 
-      const evidence_manifest_hash = await buildEvidenceManifestHash({
-        farm_id: farmId, batch_id: batchId, advisor_id: advisorId,
-        current_feeding_summary: form.current_feeding_summary,
-        available_feed_summary: form.available_feed_summary,
-        cost_constraint_summary: form.cost_constraint_summary,
-        supply_constraint_summary: form.supply_constraint_summary,
-        health_context_summary: form.health_context_summary,
-        environment_context_summary: form.environment_context_summary,
-        submitted_at: now,
-      });
-
-      // Generate explicit request_id so results page can look it up by the same ID.
-      const requestId = `req-${crypto.randomUUID()}`;
-
-      setTxStatus('Submitting to GenLayer…');
-      const txHash = await submitAndOptimizeFeed({
-        request_id: requestId, farm_id: farmId, batch_id: batchId, advisor_id: advisorId,
-        standard_ids_csv, ingredient_ids_csv,
-        ...form,
-        evidence_manifest_hash, ration_hash,
-        submitted_at: now, expires_at: expiresAt, adjudicated_at: now,
-      }, privateKey, walletAddress);
-
-      setTxStatus('Waiting for consensus… (up to 2 min)');
-      const receipt = await waitForTransaction(txHash, 150_000);
-      if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted: ' + receipt.status);
-
-      // Mirror request to Supabase
-      setTxStatus('Syncing result…');
-      await createClient().from('optimization_requests').upsert({
-        id: requestId, farm_id: farmId, batch_id: batchId, advisor_id: advisorId,
-        standard_ids_csv, ingredient_ids_csv, ...form,
-        evidence_manifest_hash, ration_hash,
-        submitted_by: walletAddress, submitted_at: now, expires_at: expiresAt,
-        status: 'PENDING', tx_hash: txHash,
-        raw_json: {
-          request_id: requestId, farm_id: farmId, batch_id: batchId, advisor_id: advisorId,
-          standard_ids_csv, ingredient_ids_csv, ...form,
-          evidence_manifest_hash, ration_hash,
-          submitted_by: walletAddress, submitted_at: now, expires_at: expiresAt, status: 'PENDING',
-        },
-      });
-
-      toast.success('Feed optimization submitted!');
-      router.push(`/results/${requestId}`);
+      setSubmitted({ requestId, txHash: result.txHash });
+      setTimeout(() => router.push(`/results/${requestId}`), 2000);
     } catch (err: any) {
-      toast.error(err?.message ?? 'Submission failed.');
-      setSubmitting(false);
-      setTxStatus('');
+      setError(err.message ?? 'Submission failed');
+    } finally {
+      setLoading(false);
     }
   }
 
-  const TA = ({ label, name, placeholder, required = false }: any) => (
-    <div>
-      <label className="mb-1 block text-sm font-medium text-foreground">{label}{required && ' *'}</label>
-      <textarea
-        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-        rows={3} placeholder={placeholder} value={(form as any)[name]}
-        onChange={(e) => setF(name, e.target.value)} required={required}
-      />
-    </div>
-  );
-
-  const MultiSelect = ({ label, items, selected, onToggle }: {
-    label: string; items: SelectItem[]; selected: string[]; onToggle: (id: string) => void;
-  }) => (
-    <div>
-      <label className="mb-1 block text-sm font-medium text-foreground">{label} *</label>
-      {!items.length ? (
-        <p className="text-xs text-muted-foreground">No items available. Select a farm first.</p>
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onToggle(item.id)}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                selected.includes(item.id)
-                  ? 'border-brand-600 bg-brand-600 text-white'
-                  : 'border-border bg-background text-foreground hover:bg-secondary'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
+  if (!wallet) {
+    return (
+      <div className="max-w-lg mx-auto">
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Optimize Feed Ration</h1>
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-center">
+          <div className="text-4xl mb-3">🔑</div>
+          <h2 className="font-semibold text-gray-900 mb-2">Wallet Required</h2>
+          <p className="text-sm text-gray-600 mb-5">You need a wallet to submit optimization requests to the GenLayer blockchain.</p>
+          <button onClick={handleGenerateWallet} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors">Generate Wallet</button>
         </div>
-      )}
-    </div>
-  );
+      </div>
+    );
+  }
+
+  if (submitted) {
+    return (
+      <div className="max-w-lg mx-auto">
+        <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center">
+          <div className="text-5xl mb-4">🎯</div>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Submitted to GenLayer!</h2>
+          <p className="text-sm text-gray-500 mb-4">AI consensus is evaluating your ration. Redirecting to results...</p>
+          <p className="font-mono text-xs text-gray-400 mb-3">{submitted.requestId}</p>
+          <a href={`${GENLAYER_EXPLORER_URL}/tx/${submitted.txHash}`} target="_blank" rel="noopener noreferrer" className="text-green-600 hover:underline text-sm">View Transaction ↗</a>
+        </div>
+      </div>
+    );
+  }
+
+  const STEPS = ['Livestock', 'Ingredients & Standards', 'Ration Details', 'Constraints & Submit'];
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-foreground">Feed Optimizer</h2>
-        <p className="text-sm text-muted-foreground">Submit a feed optimization request to GenLayer AI consensus.</p>
+    <div className="max-w-3xl mx-auto">
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">Optimize Feed Ration</h1>
+      <p className="text-gray-500 text-sm mb-6">Submit your ration for AI consensus evaluation on GenLayer</p>
+
+      {/* Step indicator */}
+      <div className="flex items-center gap-1 mb-8">
+        {STEPS.map((s, i) => (
+          <div key={i} className="flex items-center flex-1">
+            <div className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-bold shrink-0 ${step > i + 1 ? 'bg-green-600 text-white' : step === i + 1 ? 'bg-green-600 text-white' : 'bg-gray-200 text-gray-500'}`}>
+              {step > i + 1 ? '✓' : i + 1}
+            </div>
+            <div className="ml-2 text-xs font-medium hidden sm:block" style={{ color: step === i + 1 ? '#16a34a' : '#9ca3af' }}>{s}</div>
+            {i < STEPS.length - 1 && <div className={`flex-1 h-0.5 mx-2 ${step > i + 1 ? 'bg-green-600' : 'bg-gray-200'}`} />}
+          </div>
+        ))}
       </div>
 
-      {submitting && (
-        <Card padding="md" className="flex items-center gap-3 bg-brand-50">
-          <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
-          <span className="text-sm font-medium text-brand-700">{txStatus || 'Processing…'}</span>
-        </Card>
-      )}
+      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 mb-5 text-sm">{error}</div>}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Context */}
-        <Card padding="md"><CardContent className="space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Farm Context</p>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">Farm *</label>
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-              value={farmId} onChange={(e) => setFarmId(e.target.value)} required>
-              <option value="">Select farm…</option>
-              {farms.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-            </select>
+      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        {/* Step 1 */}
+        {step === 1 && (
+          <div className="space-y-5">
+            <h2 className="font-semibold text-gray-900 text-lg mb-4">Step 1: Select Livestock</h2>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Farm <span className="text-red-500">*</span></label>
+              <select required value={farmId} onChange={e => { setFarmId(e.target.value); setBatchId(''); setAdvisorId(''); }} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                <option value="">Select a farm</option>
+                {farms.map(f => <option key={f.farm_id} value={f.farm_id}>{f.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Livestock Batch <span className="text-red-500">*</span></label>
+              <select required value={batchId} onChange={e => setBatchId(e.target.value)} disabled={!farmId} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-50">
+                <option value="">Select a batch</option>
+                {batches.map(b => <option key={b.batch_id} value={b.batch_id}>{b.species} — {b.production_stage}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Feed Advisor <span className="text-red-500">*</span></label>
+              <select required value={advisorId} onChange={e => setAdvisorId(e.target.value)} disabled={!farmId} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-50">
+                <option value="">Select an advisor</option>
+                {advisors.map(a => <option key={a.advisor_id} value={a.advisor_id}>{a.name}</option>)}
+              </select>
+              {farmId && advisors.length === 0 && <p className="text-xs text-amber-600 mt-1">No advisors registered for this farm. <Link href="/advisors/new" className="underline">Add one</Link></p>}
+            </div>
+            <div className="flex justify-end">
+              <button onClick={() => setStep(2)} disabled={!farmId || !batchId || !advisorId} className="bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white px-6 py-2.5 rounded-lg font-medium transition-colors">Next →</button>
+            </div>
           </div>
+        )}
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">Livestock batch *</label>
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-              value={batchId} onChange={(e) => setBatchId(e.target.value)} required disabled={!farmId}>
-              <option value="">Select batch…</option>
-              {batches.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
-            </select>
+        {/* Step 2 */}
+        {step === 2 && (
+          <div className="space-y-5">
+            <h2 className="font-semibold text-gray-900 text-lg mb-4">Step 2: Ingredients & Standards</h2>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Available Feed Ingredients <span className="text-red-500">*</span></label>
+              <div className="border border-gray-200 rounded-lg max-h-64 overflow-y-auto">
+                {ingredients.length === 0 ? (
+                  <div className="p-4 text-sm text-gray-400 text-center">No ingredients for this farm. <Link href="/ingredients/new" className="text-green-600 underline">Add ingredients</Link></div>
+                ) : ingredients.map(ing => (
+                  <label key={ing.ingredient_id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
+                    <input type="checkbox" checked={selectedIngredients.includes(ing.ingredient_id)} onChange={() => toggleIngredient(ing.ingredient_id)} className="rounded text-green-600" />
+                    <span className="text-sm text-gray-900">{ing.name}</span>
+                    <span className="text-xs text-gray-400 ml-auto">{ing.category}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">{selectedIngredients.length} ingredient(s) selected</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Feed Standard <span className="text-red-500">*</span></label>
+              <select required value={standardId} onChange={e => setStandardId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                <option value="">Select a feed standard</option>
+                {standards.map(s => <option key={s.standard_id} value={s.standard_id}>{s.title} (v{s.version})</option>)}
+              </select>
+            </div>
+            <div className="flex justify-between">
+              <button onClick={() => setStep(1)} className="border border-gray-300 text-gray-700 px-6 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors">← Back</button>
+              <button onClick={() => setStep(3)} disabled={selectedIngredients.length === 0 || !standardId} className="bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white px-6 py-2.5 rounded-lg font-medium transition-colors">Next →</button>
+            </div>
           </div>
+        )}
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-foreground">Feed advisor *</label>
-            <select className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-              value={advisorId} onChange={(e) => setAdvisorId(e.target.value)} required disabled={!farmId}>
-              <option value="">Select advisor…</option>
-              {advisors.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
-            </select>
+        {/* Step 3 */}
+        {step === 3 && (
+          <div className="space-y-5">
+            <h2 className="font-semibold text-gray-900 text-lg mb-4">Step 3: Ration Details</h2>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Optimization Objective <span className="text-red-500">*</span></label>
+              <textarea required value={objectiveSummary} onChange={e => setObjectiveSummary(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="e.g. Maximize growth rate while keeping ration cost below $0.40/kg DM" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Current Feeding Summary</label>
+              <textarea value={currentFeedingSummary} onChange={e => setCurrentFeedingSummary(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Describe what the animals are currently being fed..." />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Available Feed Summary</label>
+              <textarea value={availableFeedSummary} onChange={e => setAvailableFeedSummary(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="What ingredients are actually in stock and available now..." />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Candidate Ration Summary <span className="text-red-500">*</span></label>
+              <textarea required value={candidateRationSummary} onChange={e => setCandidateRationSummary(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Describe the proposed ration mix: ingredient percentages, inclusion rates, preparation method..." />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nutrient Analysis Summary <span className="text-red-500">*</span></label>
+              <textarea required value={nutrientAnalysisSummary} onChange={e => setNutrientAnalysisSummary(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Estimated CP, ME, amino acids, minerals, vitamins in the candidate ration..." />
+            </div>
+            <div className="flex justify-between">
+              <button onClick={() => setStep(2)} className="border border-gray-300 text-gray-700 px-6 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors">← Back</button>
+              <button onClick={() => setStep(4)} disabled={!objectiveSummary || !candidateRationSummary || !nutrientAnalysisSummary} className="bg-green-600 hover:bg-green-700 disabled:bg-gray-200 disabled:text-gray-400 text-white px-6 py-2.5 rounded-lg font-medium transition-colors">Next →</button>
+            </div>
           </div>
+        )}
 
-          <MultiSelect
-            label="Feed standards (select all that apply)"
-            items={standards}
-            selected={selectedStandards}
-            onToggle={(id) => toggleMulti(selectedStandards, setSelectedStandards, id)}
-          />
+        {/* Step 4 */}
+        {step === 4 && (
+          <div className="space-y-5">
+            <h2 className="font-semibold text-gray-900 text-lg mb-4">Step 4: Constraints & Submit</h2>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Cost Constraint Summary</label>
+              <textarea value={costConstraintSummary} onChange={e => setCostConstraintSummary(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="e.g. Maximum budget $0.45/kg DM; limited capital for expensive premixes..." />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Supply Constraint Summary</label>
+              <textarea value={supplyConstraintSummary} onChange={e => setSupplyConstraintSummary(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="e.g. Soybean meal supply uncertain after October; maize available in bulk..." />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Health Context Summary</label>
+              <textarea value={healthContextSummary} onChange={e => setHealthContextSummary(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Any current health conditions, medication interactions, recovery status..." />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Environment Context Summary</label>
+              <textarea value={environmentContextSummary} onChange={e => setEnvironmentContextSummary(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="e.g. High-altitude farm, hot climate, wet season — adjust energy density..." />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Evidence Manifest Hash <span className="text-gray-400 font-normal">(optional)</span></label>
+              <input value={evidenceManifestHash} onChange={e => setEvidenceManifestHash(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="0x... (IPFS hash of lab results, vet reports, etc.)" />
+            </div>
 
-          <MultiSelect
-            label="Available feed ingredients (select all)"
-            items={ingredients}
-            selected={selectedIngredients}
-            onToggle={(id) => toggleMulti(selectedIngredients, setSelectedIngredients, id)}
-          />
-        </CardContent></Card>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
+              <strong>Ready to submit.</strong> This will broadcast a transaction to GenLayer StudioNet. AI validators will evaluate your ration and reach consensus. This may take 1-5 minutes.
+            </div>
 
-        {/* Summaries */}
-        <Card padding="md"><CardContent className="space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Optimization Context</p>
-          <TA label="Optimization objective" name="objective_summary" required
-            placeholder="e.g. Maximize daily weight gain to 1.2kg/day for 120 beef cattle (Grower stage, 300–380kg), minimizing cost while meeting NRC standards." />
-          <TA label="Current feeding summary" name="current_feeding_summary"
-            placeholder="e.g. Currently feeding 4kg/day Corn-Soy finisher mix at ₦105/kg. FCR 8.2. Weight gain 0.8kg/day. Feed changed 6 weeks ago." />
-          <TA label="Available feed summary" name="available_feed_summary" required
-            placeholder="e.g. Corn (200 bags, ₦78/kg), Soybean Meal 47% (60 bags, ₦682/kg), Wheat Bran (50 bags, ₦45/kg), Mineral Premix (20kg, ₦1200/kg). Palm kernel cake seasonal." />
-          <TA label="Candidate ration summary" name="candidate_ration_summary"
-            placeholder="e.g. Proposed: 55% Corn, 30% Soybean Meal, 12% Wheat Bran, 3% Mineral Premix. Target CP 16%, ME 2800 kcal/kg. Estimated cost ₦112/kg." />
-          <TA label="Nutrient analysis summary" name="nutrient_analysis_summary"
-            placeholder="e.g. Proximate analysis from accredited lab. CP 15.8%, ME est. 2760 kcal/kg, Ca 0.65%, P 0.42%, Moisture 11%. Lysine slightly below NRC recommendation." />
-          <TA label="Cost constraint summary" name="cost_constraint_summary"
-            placeholder="e.g. Max feed cost ₦120/kg. Daily budget ₦420/head. Willing to reduce corn if soy price drops below ₦650/kg." />
-          <TA label="Supply constraint summary" name="supply_constraint_summary"
-            placeholder="e.g. Palm kernel cake unavailable until October. Soybean Meal supply limited to 3 months. Prefer to avoid imported amino acids." />
-          <TA label="Health context summary" name="health_context_summary"
-            placeholder="e.g. Vaccinated against FMD and Brucellosis. Mild bloat issue noted in 4 animals last month. No current illness. Vet cleared for new ration trial." />
-          <TA label="Environment context summary" name="environment_context_summary"
-            placeholder="e.g. Semi-arid savanna, northern Nigeria. Dry season (Nov–Apr). Average temp 38°C day. Feed storage in covered barn. Water from borehole, adequate supply." />
-        </CardContent></Card>
-
-        <div className="flex justify-end pt-2">
-          <Button
-            type="submit"
-            loading={submitting}
-            leftIcon={<FlaskConical className="h-4 w-4" />}
-            size="lg"
-          >
-            Submit for GenLayer Consensus
-          </Button>
-        </div>
-      </form>
+            <div className="flex justify-between">
+              <button onClick={() => setStep(3)} className="border border-gray-300 text-gray-700 px-6 py-2.5 rounded-lg font-medium hover:bg-gray-50 transition-colors">← Back</button>
+              <button onClick={handleSubmit} disabled={loading} className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-8 py-2.5 rounded-lg font-semibold transition-colors flex items-center gap-2">
+                {loading ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                    Submitting to GenLayer consensus...
+                  </>
+                ) : '🎯 Submit for Optimization'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

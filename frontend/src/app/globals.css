@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand: #16a34a;
+  --brand-dark: #15803d;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900;
+}

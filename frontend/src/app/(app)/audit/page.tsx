@@ -1,99 +1,109 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { Card, Spinner } from '@/components/ui';
 import { createClient } from '@/lib/supabase/client';
-import type { AuditLog } from '@/lib/genlayer/types';
 
-const PAGE_SIZE = 30;
+interface AuditEvent {
+  id: string;
+  event_type: string;
+  request_id: string;
+  actor: string;
+  summary: string;
+  logged_at: string;
+  farms?: { name: string };
+}
+
+interface Farm { id: string; name: string; }
 
 export default function AuditPage() {
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [farms, setFarms] = useState<Farm[]>([]);
+  const [farmFilter, setFarmFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    const from = (page - 1) * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-    createClient()
-      .from('audit_events')
-      .select('raw_json', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(from, to)
-      .then(({ data, count }) => {
-        setLogs((data ?? []).map((r: any) => r.raw_json as AuditLog));
-        setTotal(count ?? 0);
-        setLoading(false);
-      });
-  }, [page]);
+    const supabase = createClient();
+    supabase.from('farms').select('id, name').then(({ data }) => setFarms(data ?? []));
+  }, []);
 
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      const supabase = createClient();
+      let q = supabase.from('audit_events').select('*, farms(name)').order('logged_at', { ascending: false }).limit(200);
+      if (farmFilter !== 'ALL') q = q.eq('farm_id', farmFilter);
+      const { data } = await q;
+      setEvents((data ?? []) as AuditEvent[]);
+      setLoading(false);
+    }
+    load();
+  }, [farmFilter]);
 
-  const eventColor = (eventType: string) => {
-    if (eventType.includes('APPROVED') || eventType.includes('ACTIVATED')) return 'bg-green-50 text-green-700';
-    if (eventType.includes('REJECTED') || eventType.includes('BLOCKED')) return 'bg-red-50 text-red-700';
-    if (eventType.includes('ESCALAT') || eventType.includes('REVIEW')) return 'bg-orange-50 text-orange-700';
-    return 'bg-secondary text-muted-foreground';
+  const EVENT_COLORS: Record<string, string> = {
+    FARM_CREATED: 'bg-green-100 text-green-700',
+    BATCH_REGISTERED: 'bg-emerald-100 text-emerald-700',
+    INGREDIENT_ADDED: 'bg-teal-100 text-teal-700',
+    STANDARD_PUBLISHED: 'bg-blue-100 text-blue-700',
+    OPTIMIZATION_SUBMITTED: 'bg-violet-100 text-violet-700',
+    PLAN_ACTIVATED: 'bg-green-100 text-green-700',
+    HUMAN_REVIEW: 'bg-amber-100 text-amber-700',
+    PLAN_REJECTED: 'bg-red-100 text-red-700',
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-xl font-bold text-foreground">Audit Trail</h2>
-        <p className="text-sm text-muted-foreground">Immutable on-chain event log for all feed optimization activity.</p>
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Audit Trail</h1>
+        <p className="text-gray-500 text-sm mt-1">Complete log of all actions and blockchain events across your operation</p>
       </div>
 
-      <Card padding="none">
-        {loading ? (
-          <div className="flex justify-center py-12"><Spinner size="lg" /></div>
-        ) : !logs.length ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">No audit events recorded yet.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {logs.map((log) => (
-              <li key={log.audit_id} className="flex items-start gap-4 px-5 py-3.5">
-                <div className="mt-0.5 shrink-0">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${eventColor(log.event_type)}`}>
-                    {log.event_type.replace(/_/g, ' ')}
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-foreground">{log.summary}</p>
-                  <div className="mt-0.5 flex items-center gap-3 text-xs text-muted-foreground">
-                    {log.actor && <span>by {log.actor}</span>}
-                    {log.farm_id && <span>Farm: {log.farm_id}</span>}
-                    {log.request_id && <span>Req: {log.request_id}</span>}
-                  </div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <p className="text-xs text-muted-foreground">
-                    {log.created_at
-                      ? formatDistanceToNow(new Date(log.created_at), { addSuffix: true })
-                      : '—'}
-                  </p>
-                  <p className="font-mono text-xs text-muted-foreground/60">{log.audit_id}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
+          <span className="text-sm text-gray-600 font-medium">Filter by farm:</span>
+          <select value={farmFilter} onChange={e => setFarmFilter(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+            <option value="ALL">All Farms</option>
+            {farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        </div>
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-border px-4 py-3">
-            <p className="text-xs text-muted-foreground">{total} events</p>
-            <div className="flex gap-2">
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-                className="rounded border border-border px-2.5 py-1 text-xs disabled:opacity-40">Prev</button>
-              <span className="px-2 text-xs text-muted-foreground">Page {page} of {totalPages}</span>
-              <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                className="rounded border border-border px-2.5 py-1 text-xs disabled:opacity-40">Next</button>
-            </div>
+        {loading ? (
+          <div className="p-8 text-center text-gray-400 text-sm">Loading audit events...</div>
+        ) : events.length === 0 ? (
+          <div className="p-12 text-center">
+            <div className="text-4xl mb-3">🔍</div>
+            <p className="text-gray-500 text-sm">No audit events found</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                <tr>
+                  <th className="px-5 py-3 text-left">Event Type</th>
+                  <th className="px-5 py-3 text-left">Farm</th>
+                  <th className="px-5 py-3 text-left">Request ID</th>
+                  <th className="px-5 py-3 text-left">Actor</th>
+                  <th className="px-5 py-3 text-left">Summary</th>
+                  <th className="px-5 py-3 text-left">Logged At</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {events.map(ev => (
+                  <tr key={ev.id} className="hover:bg-gray-50">
+                    <td className="px-5 py-3">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${EVENT_COLORS[ev.event_type] ?? 'bg-gray-100 text-gray-600'}`}>{ev.event_type}</span>
+                    </td>
+                    <td className="px-5 py-3 text-gray-700">{(ev.farms as any)?.name ?? '—'}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-gray-400">{ev.request_id ? `${ev.request_id.slice(0, 12)}...` : '—'}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-gray-500">{ev.actor ? `${ev.actor.slice(0, 10)}...` : '—'}</td>
+                    <td className="px-5 py-3 text-gray-600 max-w-xs truncate">{ev.summary}</td>
+                    <td className="px-5 py-3 text-gray-400 text-xs">{ev.logged_at ? new Date(ev.logged_at).toLocaleString() : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
-      </Card>
+      </div>
     </div>
   );
 }
