@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       privateKey || process.env.GENLAYER_PRIVATE_KEY || process.env.PRIVATE_KEY
     );
     const account = privateKeyToAccount(signingKey);
-    const contractAddress = normalizeAddress(process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0x8d1971d3B4fBB0D1d5EDC8a2BF59353eB3A0DDBE');
+    const contractAddress = normalizeAddress(process.env.NEXT_PUBLIC_GENLAYER_CONTRACT_ADDRESS || '0x0C5Ec297AfDA24F411500E3e37B82069a9b98C1a');
     const from = walletAddress ? normalizeAddress(walletAddress) : normalizeAddress(account.address);
 
     if (normalizeAddress(account.address).toLowerCase() !== from.toLowerCase()) {
