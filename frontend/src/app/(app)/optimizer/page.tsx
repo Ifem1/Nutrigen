@@ -109,9 +109,12 @@ export default function OptimizerPage() {
         submitted_at: now,
       });
 
+      // Generate explicit request_id so results page can look it up by the same ID.
+      const requestId = `req-${crypto.randomUUID()}`;
+
       setTxStatus('Submitting to GenLayer…');
       const txHash = await submitAndOptimizeFeed({
-        request_id: '', farm_id: farmId, batch_id: batchId, advisor_id: advisorId,
+        request_id: requestId, farm_id: farmId, batch_id: batchId, advisor_id: advisorId,
         standard_ids_csv, ingredient_ids_csv,
         ...form,
         evidence_manifest_hash, ration_hash,
@@ -121,8 +124,6 @@ export default function OptimizerPage() {
       setTxStatus('Waiting for consensus… (up to 2 min)');
       const receipt = await waitForTransaction(txHash, 150_000);
       if (receipt.status !== 'ACCEPTED') throw new Error('Transaction not accepted: ' + receipt.status);
-
-      const requestId = (receipt.data as any)?.result ?? txHash;
 
       // Mirror request to Supabase
       setTxStatus('Syncing result…');
