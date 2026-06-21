@@ -62,8 +62,8 @@ export async function POST(req: NextRequest) {
 
     console.info('[Nutrigen /write] writeContract txHash:', txHash);
 
-    // Wait for consensus (StudioNet typically confirms in <30s with 5 validators).
-    const receipt = await client.waitForTransactionReceipt({ hash: txHash });
+    // Wait for consensus — AI methods can take 2-3 min; timeout just under maxDuration (300s).
+    const receipt = await client.waitForTransactionReceipt({ hash: txHash, timeout: 270_000 });
     // GenLayer status 5 = ACCEPTED
     const genStatus = (receipt as any)?.status;
     console.info('[Nutrigen /write] receipt status:', genStatus, 'hash:', txHash);
