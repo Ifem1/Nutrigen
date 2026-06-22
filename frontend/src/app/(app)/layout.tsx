@@ -20,7 +20,7 @@ const NAV = [
   { href: '/settings', label: 'My Profile', icon: '👤' },
 ];
 
-const CONTRACT = '0x1D63Ef3E2edeE0509D1dda9d4DDe15F3E876b602';
+const CONTRACT = '0x6e751Ed604aBF56b66281152F5623FE5ccbb7D12';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -99,7 +99,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="px-4 py-4 border-t border-green-800">
           <div className="bg-green-800 rounded-lg p-3 mb-3">
             <p className="text-xs text-green-300 font-medium mb-1">Contract</p>
-            <p className="text-xs text-green-100 font-mono truncate">{CONTRACT.slice(0, 10)}...{CONTRACT.slice(-6)}</p>
+            <a href={`https://explorer-studio.genlayer.com/address/${CONTRACT}`} target="_blank" rel="noopener noreferrer" className="text-xs text-green-100 font-mono truncate hover:text-white hover:underline block">{CONTRACT.slice(0, 10)}...{CONTRACT.slice(-6)} ↗</a>
             <p className="text-xs text-green-400 mt-1">GenLayer · StudioNet · 61999</p>
           </div>
           <button onClick={handleSignOut} className="w-full text-left text-xs text-green-300 hover:text-white px-2 py-1.5 rounded hover:bg-green-800 transition-colors">

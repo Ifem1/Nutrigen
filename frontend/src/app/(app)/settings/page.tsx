@@ -132,7 +132,7 @@ export default function SettingsPage() {
           </div>
           <div className="flex justify-between py-1">
             <span className="text-gray-500">Contract</span>
-            <span className="font-mono text-xs text-gray-500">0x1D63Ef3E...6b602</span>
+            <span className="font-mono text-xs text-gray-500">0x6e751Ed6...b7D12</span>
           </div>
         </div>
       </div>

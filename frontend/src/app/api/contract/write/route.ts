@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createAccount } from "genlayer-js";
 import { studionet } from "genlayer-js/chains";
 
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NUTRIGEN_CONTRACT_ADDRESS ?? "0x1D63Ef3E2edeE0509D1dda9d4DDe15F3E876b602";
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NUTRIGEN_CONTRACT_ADDRESS ?? "0x6e751Ed604aBF56b66281152F5623FE5ccbb7D12";
 const EXPLORER_URL = process.env.NEXT_PUBLIC_GENLAYER_EXPLORER_URL ?? "https://explorer-studio.genlayer.com";
 
 export async function POST(req: NextRequest) {
