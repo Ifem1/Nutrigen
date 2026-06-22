@@ -761,87 +761,47 @@ class NutrigenContract(gl.Contract):
             }
         )
 
-        def evaluate_once() -> str:
-            prompt = f"""
-You are a decentralized livestock feed optimization reviewer for Nutrigen.
+        # Build deterministic context string (same on all validator nodes)
+        context = (
+            f"FARM: {farm_json}\n"
+            f"BATCH: {batch_json}\n"
+            f"ADVISOR: {advisor_json}\n"
+            f"FEED STANDARDS: {standard_packet}\n"
+            f"INGREDIENTS: {ingredient_packet}\n"
+            f"REQUEST: {request_json}"
+        )
 
-Your job is to determine whether the proposed or requested feed plan is
-nutritionally adequate, safe, cost-aware, ingredient-aware, practical, and
-aligned with the livestock production goal.
-
-Important rules:
-1. This is livestock feed guidance, not human nutrition.
-2. Do not invent missing lab values, feed composition data, disease diagnosis,
-   ingredient prices, or veterinary facts.
-3. Treat active feed standards as authoritative.
-4. Use the available feed ingredients and constraints. Do not recommend feeds
-   that are not listed unless you clearly mark them as external suggestions.
-5. If the ration may harm animals, choose REJECTED or NEEDS_REVIEW.
-6. If the ration can be improved through rebalancing, choose NEEDS_REVISION.
-7. If veterinary or nutritionist judgment is required, choose NEEDS_REVIEW.
-8. Include a practical recommended ration summary and feeding instructions when
-   enough information exists.
-9. Return only JSON matching the schema.
-
-Farm:
-{farm_json}
-
-Livestock batch:
-{batch_json}
-
-Advisor:
-{advisor_json}
-
-Active feed standards:
-{standard_packet}
-
-Available feed ingredients:
-{ingredient_packet}
-
-Optimization request:
-{request_json}
-
-Return this exact JSON object:
-{{
-  "verdict": "APPROVED | REJECTED | NEEDS_REVIEW | NEEDS_REVISION",
-  "nutrient_adequacy_score": 0,
-  "livestock_suitability_score": 0,
-  "safety_score": 0,
-  "cost_efficiency_score": 0,
-  "availability_score": 0,
-  "production_goal_alignment_score": 0,
-  "explainability_score": 0,
-  "practicality_score": 0,
-  "risk_score": 0,
-  "risk_band": "LOW | MEDIUM | HIGH | CRITICAL",
-  "reviewer_required": false,
-  "revision_required": false,
-  "recommended_ration_summary": "recommended optimized feed plan using available ingredients",
-  "ingredient_mix_summary": "ingredient mix, percentages, parts, or proportions if determinable from supplied data",
-  "daily_feeding_summary": "how much and how often to feed, if determinable from supplied data",
-  "transition_plan_summary": "safe transition notes from current feeding to new ration",
-  "nutrient_gaps": ["specific nutrient gap"],
-  "excess_risks": ["specific excess or imbalance risk"],
-  "ingredient_risks": ["specific feed ingredient concern"],
-  "health_warnings": ["specific livestock health warning"],
-  "cost_findings": ["specific cost optimization finding"],
-  "availability_findings": ["specific supply or availability finding"],
-  "required_changes": ["specific correction needed before approval"],
-  "strengths": ["specific positive finding"],
-  "feeding_instructions": ["practical farmer-facing feeding instruction"],
-  "monitoring_notes": ["what the farmer should monitor after feeding"],
-  "rationale": "clear explanation for the verdict",
-  "audit_summary": "short audit-ready summary",
-  "confidence": 0
-}}
-"""
-            raw = gl.nondet.exec_prompt(prompt, response_format="json")
-            normalised = self._normalise_ai_review(raw)
-            return json.dumps(normalised, sort_keys=True)
-
-        consensus_json = gl.eq_principle.prompt_comparative(
-            evaluate_once,
-            principle="The two responses are equivalent if the 'verdict' field is identical (same word: APPROVED, REJECTED, NEEDS_REVIEW, or NEEDS_REVISION). All other fields may differ freely.",
+        # non_comparative: leader generates verdict, validators only judge whether it is reasonable
+        consensus_json = gl.eq_principle.prompt_non_comparative(
+            lambda: context,
+            task=(
+                "You are an expert livestock nutritionist for Nutrigen. "
+                "Evaluate the feed optimization request in the input and return ONLY valid JSON — "
+                "no markdown, no explanation outside the JSON.\n\n"
+                "Return exactly this structure:\n"
+                '{"verdict":"APPROVED","risk_band":"LOW","nutrient_adequacy_score":80,'
+                '"livestock_suitability_score":80,"safety_score":80,"cost_efficiency_score":80,'
+                '"availability_score":75,"production_goal_alignment_score":80,'
+                '"explainability_score":80,"practicality_score":75,"risk_score":20,'
+                '"reviewer_required":false,"revision_required":false,'
+                '"recommended_ration_summary":"...","ingredient_mix_summary":"...",'
+                '"daily_feeding_summary":"...","transition_plan_summary":"...",'
+                '"nutrient_gaps":[],"excess_risks":[],"ingredient_risks":[],'
+                '"health_warnings":[],"cost_findings":[],"availability_findings":[],'
+                '"required_changes":[],"strengths":[],"feeding_instructions":"...",'
+                '"monitoring_notes":"...","rationale":"One sentence.","audit_summary":"One sentence.","confidence":80}\n\n'
+                "verdict options: APPROVED, REJECTED, NEEDS_REVIEW, NEEDS_REVISION\n"
+                "risk_band options: LOW, MEDIUM, HIGH, CRITICAL\n"
+                "All scores are integers 0-100."
+            ),
+            criteria=(
+                "The verdict must be exactly one of: APPROVED, REJECTED, NEEDS_REVIEW, NEEDS_REVISION.\n"
+                "The risk_band must be exactly one of: LOW, MEDIUM, HIGH, CRITICAL.\n"
+                "APPROVED is only valid if the ration appears nutritionally adequate and safe for the stated species and production stage.\n"
+                "REJECTED is only valid if the ration appears harmful or grossly inadequate.\n"
+                "The verdict must be a reasonable assessment given the livestock batch, nutritional analysis, and feed standards provided.\n"
+                "The response must be valid JSON."
+            ),
         )
 
         return self._normalise_ai_review(consensus_json)
