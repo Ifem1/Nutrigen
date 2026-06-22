@@ -35,7 +35,7 @@ export async function contractWrite(
   args: unknown[],
   privateKey: string,
   contractAddress = NUTRIGEN_CONTRACT_ADDRESS
-): Promise<{ txHash: string; explorerUrl: string; data?: unknown }> {
+): Promise<{ txHash: string; explorerUrl: string; data?: unknown; consensusStatus?: string }> {
   // Write calls go through API route to keep private key server-side
   const res = await fetch("/api/contract/write", {
     method: "POST",
