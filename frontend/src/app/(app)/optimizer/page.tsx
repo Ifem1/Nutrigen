@@ -66,7 +66,7 @@ export default function OptimizerPage() {
     supabase.from('livestock_batches').select('id, species, production_stage, farm_id').eq('farm_id', farmId).then(({ data }) => setBatches(data ?? []));
     supabase.from('feed_advisors').select('id, name, farm_id').eq('farm_id', farmId).then(({ data }) => setAdvisors(data ?? []));
     supabase.from('feed_ingredients').select('id, name, category').eq('farm_id', farmId).then(({ data }) => setIngredients(data ?? []));
-    supabase.from('feed_standard_versions').select('id, standard_id, title, version').eq('farm_id', farmId).then(({ data }) => setStandards(data ?? []));
+    supabase.from('feed_standard_versions').select('id, standard_id, title, version, farm_id').eq('farm_id', farmId).then(({ data }) => setStandards(data ?? []));
   }, [farmId]);
 
   function handleGenerateWallet() {
