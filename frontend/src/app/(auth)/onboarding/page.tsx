@@ -13,7 +13,7 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     // Check if wallet already exists in session
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) {
       router.push('/dashboard');
       return;

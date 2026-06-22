@@ -16,7 +16,6 @@ const STATUS_BADGE: Record<string, string> = {
 
 interface Request {
   id: string;
-  request_id: string;
   status: string;
   created_at: string;
   farms?: { name: string };
@@ -72,8 +71,8 @@ export default function HistoryPage() {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {requests.map(r => (
-                  <tr key={r.id} onClick={() => router.push(`/results/${r.request_id}`)} className="hover:bg-gray-50 cursor-pointer">
-                    <td className="px-5 py-3 font-mono text-xs text-gray-500">{r.request_id?.slice(0, 18)}...</td>
+                  <tr key={r.id} onClick={() => router.push(`/results/${r.id}`)} className="hover:bg-gray-50 cursor-pointer">
+                    <td className="px-5 py-3 font-mono text-xs text-gray-500">{r.id?.slice(0, 18)}...</td>
                     <td className="px-5 py-3 text-gray-900 font-medium">{(r.farms as any)?.name ?? '—'}</td>
                     <td className="px-5 py-3 text-gray-600">{(r.livestock_batches as any)?.species ?? '—'}</td>
                     <td className="px-5 py-3">
@@ -81,7 +80,7 @@ export default function HistoryPage() {
                     </td>
                     <td className="px-5 py-3 text-gray-500 text-xs">{new Date(r.created_at).toLocaleString()}</td>
                     <td className="px-5 py-3">
-                      <Link href={`/results/${r.request_id}`} onClick={e => e.stopPropagation()} className="text-green-600 hover:underline text-xs">View Results</Link>
+                      <Link href={`/results/${r.id}`} onClick={e => e.stopPropagation()} className="text-green-600 hover:underline text-xs">View Results</Link>
                     </td>
                   </tr>
                 ))}

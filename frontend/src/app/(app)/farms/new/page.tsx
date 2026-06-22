@@ -24,7 +24,7 @@ export default function NewFarmPage() {
   const [success, setSuccess] = useState<{ farmId: string; txHash: string } | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) {
       setWallet(JSON.parse(stored));
     }
@@ -32,7 +32,7 @@ export default function NewFarmPage() {
 
   function handleGenerateWallet() {
     const w = generateWallet();
-    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    localStorage.setItem('nutrigen_wallet', JSON.stringify(w));
     setWallet(w);
   }
 

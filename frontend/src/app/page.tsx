@@ -1,6 +1,6 @@
 import Link from 'next/link';
 
-const CONTRACT_ADDRESS = '0xd1e92a8E1c46788DF9Af923ebEAB49aea904501d';
+const CONTRACT_ADDRESS = '0x1D63Ef3E2edeE0509D1dda9d4DDe15F3E876b602';
 const EXPLORER_URL = 'https://studio.genlayer.com';
 
 export default function LandingPage() {

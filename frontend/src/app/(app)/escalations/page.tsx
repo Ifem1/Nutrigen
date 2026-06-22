@@ -12,7 +12,6 @@ const STATUS_BADGE: Record<string, string> = {
 
 interface Request {
   id: string;
-  request_id: string;
   status: string;
   created_at: string;
   farms?: { name: string };
@@ -74,7 +73,7 @@ export default function EscalationsPage() {
               <tbody className="divide-y divide-gray-100">
                 {requests.map(r => (
                   <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3 font-mono text-xs text-gray-500">{r.request_id?.slice(0, 18)}...</td>
+                    <td className="px-5 py-3 font-mono text-xs text-gray-500">{r.id?.slice(0, 18)}...</td>
                     <td className="px-5 py-3 text-gray-900 font-medium">{(r.farms as any)?.name ?? '—'}</td>
                     <td className="px-5 py-3 text-gray-600">{(r.livestock_batches as any)?.species ?? '—'}</td>
                     <td className="px-5 py-3">
@@ -82,7 +81,7 @@ export default function EscalationsPage() {
                     </td>
                     <td className="px-5 py-3 text-gray-500 text-xs">{new Date(r.created_at).toLocaleDateString()}</td>
                     <td className="px-5 py-3">
-                      <Link href={`/escalations/${r.request_id}`} className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">Review</Link>
+                      <Link href={`/escalations/${r.id}`} className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-colors">Review</Link>
                     </td>
                   </tr>
                 ))}

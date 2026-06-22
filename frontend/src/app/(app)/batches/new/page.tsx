@@ -12,7 +12,7 @@ import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
 const SPECIES = ['Poultry', 'Cattle', 'Sheep', 'Goat', 'Swine', 'Fish', 'Other'];
 const STAGES = ['Starter', 'Grower', 'Finisher', 'Layer', 'Broiler', 'Dairy Lactation', 'Fattening', 'Maintenance', 'Gestation'];
 
-interface Farm { id: string; farm_id: string; name: string; }
+interface Farm { id: string; name: string; }
 
 export default function NewBatchPage() {
   const [wallet, setWallet] = useState<{ address: string; privateKey: string } | null>(null);
@@ -31,15 +31,15 @@ export default function NewBatchPage() {
   const [success, setSuccess] = useState<{ batchId: string; txHash: string } | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) setWallet(JSON.parse(stored));
     const supabase = createClient();
-    supabase.from('farms').select('id, farm_id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
+    supabase.from('farms').select('id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
   }, []);
 
   function handleGenerateWallet() {
     const w = generateWallet();
-    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    localStorage.setItem('nutrigen_wallet', JSON.stringify(w));
     setWallet(w);
   }
 
@@ -50,7 +50,7 @@ export default function NewBatchPage() {
     setLoading(true);
     try {
       const batchId = generateEntityId('batch');
-      const selectedFarm = farms.find(f => f.farm_id === farmId);
+      const selectedFarm = farms.find(f => f.id === farmId);
       const result = await registerLivestockBatch({ batch_id: batchId, farm_id: farmId, species, breed_summary: breedSummary, production_stage: productionStage, production_goal: productionGoal, head_count: parseInt(headCount), weight_summary: weightSummary, health_status_summary: healthStatusSummary, feeding_constraints: feedingConstraints }, wallet.privateKey);
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -122,7 +122,7 @@ export default function NewBatchPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Farm <span className="text-red-500">*</span></label>
             <select required value={farmId} onChange={e => setFarmId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
               <option value="">Select a farm</option>
-              {farms.map(f => <option key={f.farm_id} value={f.farm_id}>{f.name}</option>)}
+              {farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
           <div>

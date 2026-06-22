@@ -22,7 +22,7 @@ export default function EscalationDetailPage() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) setWallet(JSON.parse(stored));
   }, []);
 
@@ -30,7 +30,7 @@ export default function EscalationDetailPage() {
     async function load() {
       const supabase = createClient();
       const [{ data: req }, { data: dec }] = await Promise.all([
-        supabase.from('feed_optimization_requests').select('*, farms(name), livestock_batches(species, production_stage)').eq('request_id', id).single(),
+        supabase.from('feed_optimization_requests').select('*, farms(name), livestock_batches(species, production_stage)').eq('id', id).single(),
         supabase.from('feed_decisions').select('*').eq('request_id', id).order('created_at', { ascending: false }).limit(1).single(),
       ]);
       setRequest(req);
@@ -42,7 +42,7 @@ export default function EscalationDetailPage() {
 
   function handleGenerateWallet() {
     const w = generateWallet();
-    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    localStorage.setItem('nutrigen_wallet', JSON.stringify(w));
     setWallet(w);
   }
 

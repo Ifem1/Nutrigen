@@ -12,7 +12,6 @@ interface Standard {
   version: string;
   status: string;
   is_current: boolean;
-  created_at: string;
 }
 
 export default function FeedStandardsPage() {
@@ -22,7 +21,7 @@ export default function FeedStandardsPage() {
   useEffect(() => {
     async function load() {
       const supabase = createClient();
-      const { data } = await supabase.from('feed_standard_versions').select('*').order('created_at', { ascending: false });
+      const { data } = await supabase.from('feed_standard_versions').select('id, standard_id, title, species_scope, version, status, is_current');
       setStandards(data ?? []);
       setLoading(false);
     }
@@ -58,7 +57,6 @@ export default function FeedStandardsPage() {
                   <th className="px-5 py-3 text-left">Version</th>
                   <th className="px-5 py-3 text-left">Status</th>
                   <th className="px-5 py-3 text-left">Current</th>
-                  <th className="px-5 py-3 text-left">Published</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -73,7 +71,6 @@ export default function FeedStandardsPage() {
                     <td className="px-5 py-3">
                       {s.is_current ? <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Current</span> : <span className="text-gray-400 text-xs">—</span>}
                     </td>
-                    <td className="px-5 py-3 text-gray-500 text-xs">{new Date(s.created_at).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>

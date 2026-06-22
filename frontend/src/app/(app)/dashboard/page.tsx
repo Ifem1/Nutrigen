@@ -26,7 +26,6 @@ interface Stats {
 
 interface RecentRequest {
   id: string;
-  request_id: string;
   status: string;
   created_at: string;
   farms?: { name: string };
@@ -56,7 +55,7 @@ export default function DashboardPage() {
         supabase.from('feed_optimization_requests').select('*', { count: 'exact', head: true }),
         supabase.from('activated_feed_plans').select('*', { count: 'exact', head: true }),
         supabase.from('human_feed_reviews').select('*', { count: 'exact', head: true }),
-        supabase.from('feed_optimization_requests').select('id, request_id, status, created_at, farms(name), livestock_batches(species)').order('created_at', { ascending: false }).limit(10),
+        supabase.from('feed_optimization_requests').select('id, status, created_at, farms(name), livestock_batches(species)').order('created_at', { ascending: false }).limit(10),
       ]);
       setStats({ farms: farms ?? 0, batches: batches ?? 0, ingredients: ingredients ?? 0, requests: requests ?? 0, approved: approved ?? 0, pending_reviews: pending_reviews ?? 0 });
       setRecent((recentData ?? []) as unknown as RecentRequest[]);
@@ -125,7 +124,7 @@ export default function DashboardPage() {
               <tbody className="divide-y divide-gray-100">
                 {recent.map(r => (
                   <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-5 py-3 font-mono text-xs text-gray-600">{r.request_id?.slice(0, 16)}...</td>
+                    <td className="px-5 py-3 font-mono text-xs text-gray-600">{r.id?.slice(0, 16)}...</td>
                     <td className="px-5 py-3 text-gray-900">{(r.farms as any)?.name ?? '—'}</td>
                     <td className="px-5 py-3 text-gray-600">{(r.livestock_batches as any)?.species ?? '—'}</td>
                     <td className="px-5 py-3">
@@ -133,7 +132,7 @@ export default function DashboardPage() {
                     </td>
                     <td className="px-5 py-3 text-gray-500 text-xs">{new Date(r.created_at).toLocaleDateString()}</td>
                     <td className="px-5 py-3">
-                      <Link href={`/results/${r.request_id}`} className="text-green-600 hover:underline text-xs">View</Link>
+                      <Link href={`/results/${r.id}`} className="text-green-600 hover:underline text-xs">View</Link>
                     </td>
                   </tr>
                 ))}

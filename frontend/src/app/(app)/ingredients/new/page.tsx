@@ -11,7 +11,7 @@ import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
 
 const CATEGORIES = ['Cereal', 'Protein Meal', 'Roughage', 'Mineral', 'Vitamin Premix', 'Oil', 'By-product', 'Other'];
 
-interface Farm { id: string; farm_id: string; name: string; }
+interface Farm { id: string; name: string; }
 
 export default function NewIngredientPage() {
   const [wallet, setWallet] = useState<{ address: string; privateKey: string } | null>(null);
@@ -28,15 +28,15 @@ export default function NewIngredientPage() {
   const [success, setSuccess] = useState<{ ingredientId: string; txHash: string } | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) setWallet(JSON.parse(stored));
     const supabase = createClient();
-    supabase.from('farms').select('id, farm_id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
+    supabase.from('farms').select('id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
   }, []);
 
   function handleGenerateWallet() {
     const w = generateWallet();
-    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    localStorage.setItem('nutrigen_wallet', JSON.stringify(w));
     setWallet(w);
   }
 
@@ -47,7 +47,7 @@ export default function NewIngredientPage() {
     setLoading(true);
     try {
       const ingredientId = generateEntityId('ingredient');
-      const selectedFarm = farms.find(f => f.farm_id === farmId);
+      
       const result = await registerFeedIngredient({ ingredient_id: ingredientId, farm_id: farmId, name, category, nutrient_profile_summary: nutrientProfile, safety_summary: safetySummary, availability_summary: availabilitySummary, cost_summary: costSummary }, wallet.privateKey);
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -117,7 +117,7 @@ export default function NewIngredientPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Farm <span className="text-red-500">*</span></label>
             <select required value={farmId} onChange={e => setFarmId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
               <option value="">Select a farm</option>
-              {farms.map(f => <option key={f.farm_id} value={f.farm_id}>{f.name}</option>)}
+              {farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
           <div>

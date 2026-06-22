@@ -24,7 +24,7 @@ export default function AdminPage() {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) setWallet(JSON.parse(stored));
 
     async function load() {
@@ -44,7 +44,7 @@ export default function AdminPage() {
 
   function handleGenerateWallet() {
     const w = generateWallet();
-    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    localStorage.setItem('nutrigen_wallet', JSON.stringify(w));
     setWallet(w);
   }
 

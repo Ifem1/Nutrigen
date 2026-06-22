@@ -17,9 +17,10 @@ const NAV = [
   { href: '/escalations', label: 'Pending Reviews', icon: '⚠️' },
   { href: '/audit', label: 'Audit Trail', icon: '🔍' },
   { href: '/admin', label: 'Admin', icon: '⚙️' },
+  { href: '/settings', label: 'My Profile', icon: '👤' },
 ];
 
-const CONTRACT = '0xd1e92a8E1c46788DF9Af923ebEAB49aea904501d';
+const CONTRACT = '0x1D63Ef3E2edeE0509D1dda9d4DDe15F3E876b602';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -30,11 +31,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(async ({ data }) => {
       if (!data.session) {
         router.push('/login');
       } else {
-        setUserEmail(data.session.user.email ?? '');
+        const user = data.session.user;
+        setUserEmail(user.email ?? '');
+        // Ensure profile exists
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          email: user.email ?? '',
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'id' });
         setChecking(false);
       }
     });

@@ -1,48 +1,25 @@
-// GenLayer RPC client — thin wrapper around gen_call JSON-RPC
-import { GENLAYER_RPC_URL, NUTRIGEN_CONTRACT_ADDRESS, explorerTxUrl } from "./config";
+// GenLayer client — uses genlayer-js SDK
+import { createClient as createGLClient } from "genlayer-js";
+import { studionet } from "genlayer-js/chains";
+import { NUTRIGEN_CONTRACT_ADDRESS, explorerTxUrl } from "./config";
 
-type CallType = "read" | "write";
-
-interface GenCallPayload {
-  jsonrpc: "2.0";
-  id: number;
-  method: "gen_call";
-  params: [
-    {
-      to: string;
-      data: { method: string; args: unknown[] };
-      type: CallType;
-      value?: string;
-    }
-  ];
+// Read-only client (no account needed for reads)
+function getReadClient() {
+  return createGLClient({ chain: studionet });
 }
-
-async function rpc<T>(payload: GenCallPayload): Promise<T> {
-  const res = await fetch(GENLAYER_RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(`GenLayer RPC error: ${res.status} ${res.statusText}`);
-  const json = await res.json();
-  if (json.error) throw new Error(`GenLayer error: ${JSON.stringify(json.error)}`);
-  return json.result as T;
-}
-
-let _reqId = 1;
 
 export async function contractRead<T = unknown>(
   method: string,
   args: unknown[] = [],
   contractAddress = NUTRIGEN_CONTRACT_ADDRESS
 ): Promise<T> {
-  const result = await rpc<string>({
-    jsonrpc: "2.0",
-    id: _reqId++,
-    method: "gen_call",
-    params: [{ to: contractAddress, data: { method, args }, type: "read" }],
+  const client = getReadClient();
+  const result = await client.readContract({
+    address: contractAddress as `0x${string}`,
+    functionName: method,
+    args: args as any[],
   });
-  // Result may be a JSON string or already an object
+  // Result may be a JSON string or already parsed
   if (typeof result === "string") {
     try {
       return JSON.parse(result) as T;
@@ -76,6 +53,7 @@ export async function contractWrite(
     txHash,
     explorerUrl: explorerTxUrl(txHash),
     data: result.data,
+    consensusStatus: result.consensusStatus,
   };
 }
 

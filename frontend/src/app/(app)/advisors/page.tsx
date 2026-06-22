@@ -6,11 +6,10 @@ import { createClient } from '@/lib/supabase/client';
 
 interface Advisor {
   id: string;
-  advisor_id: string;
   name: string;
   credential_summary: string;
   scope_summary: string;
-  wallet_address: string;
+  wallet: string;
   status: string;
   created_at: string;
   farms?: { name: string };
@@ -69,7 +68,7 @@ export default function AdvisorsPage() {
                     <td className="px-5 py-3 text-gray-500">{(a.farms as any)?.name ?? '—'}</td>
                     <td className="px-5 py-3 text-gray-600 max-w-xs truncate">{a.credential_summary || '—'}</td>
                     <td className="px-5 py-3 text-gray-500 max-w-xs truncate">{a.scope_summary || '—'}</td>
-                    <td className="px-5 py-3 font-mono text-xs text-gray-400">{a.wallet_address ? `${a.wallet_address.slice(0,8)}...` : '—'}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-gray-400">{a.wallet ? `${a.wallet.slice(0,8)}...` : '—'}</td>
                     <td className="px-5 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${a.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{a.status}</span>
                     </td>

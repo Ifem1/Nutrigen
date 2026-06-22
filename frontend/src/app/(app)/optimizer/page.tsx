@@ -10,11 +10,11 @@ import { generateWallet } from '@/lib/nutrigen/wallet';
 import { syncOptimizationRequest, syncFeedDecision } from '@/lib/nutrigen/contractSync';
 import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
 
-interface Farm { id: string; farm_id: string; name: string; }
-interface Batch { id: string; batch_id: string; species: string; production_stage: string; farm_chain_id: string; }
-interface Advisor { id: string; advisor_id: string; name: string; farm_chain_id: string; }
-interface Ingredient { id: string; ingredient_id: string; name: string; category: string; }
-interface Standard { id: string; standard_id: string; title: string; version: string; }
+interface Farm { id: string; name: string; }
+interface Batch { id: string; species: string; production_stage: string; farm_id: string; }
+interface Advisor { id: string; name: string; farm_id: string; }
+interface Ingredient { id: string; name: string; category: string; }
+interface Standard { id: string; standard_id: string; title: string; version: string; farm_id: string; }
 
 export default function OptimizerPage() {
   const router = useRouter();
@@ -51,27 +51,27 @@ export default function OptimizerPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [submitted, setSubmitted] = useState<{ requestId: string; txHash: string } | null>(null);
+  const [submitted, setSubmitted] = useState<{ requestId: string; txHash: string; undetermined?: boolean } | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) setWallet(JSON.parse(stored));
     const supabase = createClient();
-    supabase.from('farms').select('id, farm_id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
+    supabase.from('farms').select('id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
   }, []);
 
   useEffect(() => {
     if (!farmId) { setBatches([]); setAdvisors([]); setIngredients([]); setStandards([]); return; }
     const supabase = createClient();
-    supabase.from('livestock_batches').select('id, batch_id, species, production_stage, farm_chain_id').eq('farm_chain_id', farmId).then(({ data }) => setBatches(data ?? []));
-    supabase.from('feed_advisors').select('id, advisor_id, name, farm_chain_id').eq('farm_chain_id', farmId).then(({ data }) => setAdvisors(data ?? []));
-    supabase.from('feed_ingredients').select('id, ingredient_id, name, category').eq('farm_chain_id', farmId).then(({ data }) => setIngredients(data ?? []));
-    supabase.from('feed_standard_versions').select('id, standard_id, title, version').eq('farm_chain_id', farmId).then(({ data }) => setStandards(data ?? []));
+    supabase.from('livestock_batches').select('id, species, production_stage, farm_id').eq('farm_id', farmId).then(({ data }) => setBatches(data ?? []));
+    supabase.from('feed_advisors').select('id, name, farm_id').eq('farm_id', farmId).then(({ data }) => setAdvisors(data ?? []));
+    supabase.from('feed_ingredients').select('id, name, category').eq('farm_id', farmId).then(({ data }) => setIngredients(data ?? []));
+    supabase.from('feed_standard_versions').select('id, standard_id, title, version').eq('farm_id', farmId).then(({ data }) => setStandards(data ?? []));
   }, [farmId]);
 
   function handleGenerateWallet() {
     const w = generateWallet();
-    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    localStorage.setItem('nutrigen_wallet', JSON.stringify(w));
     setWallet(w);
   }
 
@@ -102,6 +102,8 @@ export default function OptimizerPage() {
         environment_context_summary: environmentContextSummary,
       });
       const rationHash = await hashFeedPacket(packet);
+      // Contract requires a non-empty evidence_manifest_hash; fall back to ration_hash when user provides none
+      const resolvedEvidenceHash = evidenceManifestHash.trim() || rationHash;
 
       const result = await submitAndOptimizeFeed({
         request_id: requestId,
@@ -119,7 +121,7 @@ export default function OptimizerPage() {
         supply_constraint_summary: supplyConstraintSummary,
         health_context_summary: healthContextSummary,
         environment_context_summary: environmentContextSummary,
-        evidence_manifest_hash: evidenceManifestHash || '',
+        evidence_manifest_hash: resolvedEvidenceHash,
         ration_hash: rationHash,
       }, wallet.privateKey);
 
@@ -134,7 +136,7 @@ export default function OptimizerPage() {
         nutrient_analysis_summary: nutrientAnalysisSummary, cost_constraint_summary: costConstraintSummary,
         supply_constraint_summary: supplyConstraintSummary, health_context_summary: healthContextSummary,
         environment_context_summary: environmentContextSummary,
-        evidence_manifest_hash: evidenceManifestHash || '', ration_hash: rationHash,
+        evidence_manifest_hash: resolvedEvidenceHash, ration_hash: rationHash,
       }, user?.id);
 
       // Sync the decision that came back from GenLayer consensus
@@ -142,8 +144,10 @@ export default function OptimizerPage() {
         await syncFeedDecision(result.txHash, requestId, result.data as Record<string, unknown>);
       }
 
-      setSubmitted({ requestId, txHash: result.txHash });
-      setTimeout(() => router.push(`/results/${requestId}`), 2000);
+      const isUndetermined = (result as any).consensusStatus === 'UNDETERMINED' ||
+        String((result as any).consensusStatus ?? '').toUpperCase().includes('UNDETERMINED');
+      setSubmitted({ requestId, txHash: result.txHash, undetermined: isUndetermined });
+      if (!isUndetermined) setTimeout(() => router.push(`/results/${requestId}`), 2000);
     } catch (err: any) {
       setError(err.message ?? 'Submission failed');
     } finally {
@@ -166,6 +170,20 @@ export default function OptimizerPage() {
   }
 
   if (submitted) {
+    if (submitted.undetermined) {
+      return (
+        <div className="max-w-lg mx-auto">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-8 text-center">
+            <div className="text-5xl mb-4">⚠️</div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Consensus Not Reached</h2>
+            <p className="text-sm text-gray-600 mb-2">The GenLayer validators could not agree on a verdict (leader rotation). This occasionally happens on StudioNet.</p>
+            <p className="text-xs text-gray-400 mb-4">Try submitting again — a new consensus round will start fresh.</p>
+            <a href={`${GENLAYER_EXPLORER_URL}/tx/${submitted.txHash}`} target="_blank" rel="noopener noreferrer" className="text-amber-600 hover:underline text-xs block mb-5">View failed transaction ↗</a>
+            <button onClick={() => setSubmitted(null)} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors">Try Again</button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="max-w-lg mx-auto">
         <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center">
@@ -210,21 +228,21 @@ export default function OptimizerPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Farm <span className="text-red-500">*</span></label>
               <select required value={farmId} onChange={e => { setFarmId(e.target.value); setBatchId(''); setAdvisorId(''); }} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                 <option value="">Select a farm</option>
-                {farms.map(f => <option key={f.farm_id} value={f.farm_id}>{f.name}</option>)}
+                {farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Livestock Batch <span className="text-red-500">*</span></label>
               <select required value={batchId} onChange={e => setBatchId(e.target.value)} disabled={!farmId} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-50">
                 <option value="">Select a batch</option>
-                {batches.map(b => <option key={b.batch_id} value={b.batch_id}>{b.species} — {b.production_stage}</option>)}
+                {batches.map(b => <option key={b.id} value={b.id}>{b.species} — {b.production_stage}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Feed Advisor <span className="text-red-500">*</span></label>
               <select required value={advisorId} onChange={e => setAdvisorId(e.target.value)} disabled={!farmId} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 disabled:bg-gray-50">
                 <option value="">Select an advisor</option>
-                {advisors.map(a => <option key={a.advisor_id} value={a.advisor_id}>{a.name}</option>)}
+                {advisors.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
               {farmId && advisors.length === 0 && <p className="text-xs text-amber-600 mt-1">No advisors registered for this farm. <Link href="/advisors/new" className="underline">Add one</Link></p>}
             </div>
@@ -244,8 +262,8 @@ export default function OptimizerPage() {
                 {ingredients.length === 0 ? (
                   <div className="p-4 text-sm text-gray-400 text-center">No ingredients for this farm. <Link href="/ingredients/new" className="text-green-600 underline">Add ingredients</Link></div>
                 ) : ingredients.map(ing => (
-                  <label key={ing.ingredient_id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
-                    <input type="checkbox" checked={selectedIngredients.includes(ing.ingredient_id)} onChange={() => toggleIngredient(ing.ingredient_id)} className="rounded text-green-600" />
+                  <label key={ing.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0">
+                    <input type="checkbox" checked={selectedIngredients.includes(ing.id)} onChange={() => toggleIngredient(ing.id)} className="rounded text-green-600" />
                     <span className="text-sm text-gray-900">{ing.name}</span>
                     <span className="text-xs text-gray-400 ml-auto">{ing.category}</span>
                   </label>
@@ -257,7 +275,7 @@ export default function OptimizerPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Feed Standard <span className="text-red-500">*</span></label>
               <select required value={standardId} onChange={e => setStandardId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                 <option value="">Select a feed standard</option>
-                {standards.map(s => <option key={s.standard_id} value={s.standard_id}>{s.title} (v{s.version})</option>)}
+                {standards.map(s => <option key={s.id} value={s.standard_id}>{s.title} (v{s.version})</option>)}
               </select>
             </div>
             <div className="flex justify-between">
@@ -318,11 +336,6 @@ export default function OptimizerPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Environment Context Summary</label>
               <textarea value={environmentContextSummary} onChange={e => setEnvironmentContextSummary(e.target.value)} rows={2} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="e.g. High-altitude farm, hot climate, wet season — adjust energy density..." />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Evidence Manifest Hash <span className="text-gray-400 font-normal">(optional)</span></label>
-              <input value={evidenceManifestHash} onChange={e => setEvidenceManifestHash(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="0x... (IPFS hash of lab results, vet reports, etc.)" />
-            </div>
-
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-800">
               <strong>Ready to submit.</strong> This will broadcast a transaction to GenLayer StudioNet. AI validators will evaluate your ration and reach consensus. This may take 1-5 minutes.
             </div>

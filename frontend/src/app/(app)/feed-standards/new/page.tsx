@@ -4,13 +4,13 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { publishFeedStandardVersion, setCurrentFeedStandardVersion } from '@/lib/genlayer/nutrigenContract';
-import { generateEntityId } from '@/lib/nutrigen/feedPacket';
+import { generateEntityId, hashStandard } from '@/lib/nutrigen/feedPacket';
 import { generateWallet } from '@/lib/nutrigen/wallet';
 import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
 
-const SEVERITIES = ['ADVISORY', 'WARNING', 'CRITICAL'];
+const SEVERITIES = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
-interface Farm { id: string; farm_id: string; name: string; }
+interface Farm { id: string; name: string; }
 
 export default function NewFeedStandardPage() {
   const [wallet, setWallet] = useState<{ address: string; privateKey: string } | null>(null);
@@ -21,7 +21,7 @@ export default function NewFeedStandardPage() {
   const [title, setTitle] = useState('');
   const [speciesScope, setSpeciesScope] = useState('');
   const [productionStageScope, setProductionStageScope] = useState('');
-  const [severity, setSeverity] = useState('WARNING');
+  const [severity, setSeverity] = useState('MEDIUM');
   const [nutrientTargetRules, setNutrientTargetRules] = useState('');
   const [ingredientLimitRules, setIngredientLimitRules] = useState('');
   const [toxinRules, setToxinRules] = useState('');
@@ -33,16 +33,16 @@ export default function NewFeedStandardPage() {
   const [success, setSuccess] = useState<{ standardId: string; txHash: string } | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) setWallet(JSON.parse(stored));
     const supabase = createClient();
-    supabase.from('farms').select('id, farm_id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
+    supabase.from('farms').select('id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
     setStandardId(generateEntityId('std'));
   }, []);
 
   function handleGenerateWallet() {
     const w = generateWallet();
-    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    localStorage.setItem('nutrigen_wallet', JSON.stringify(w));
     setWallet(w);
   }
 
@@ -52,33 +52,39 @@ export default function NewFeedStandardPage() {
     setError('');
     setLoading(true);
     try {
-      const selectedFarm = farms.find(f => f.farm_id === farmId);
-      const result = await publishFeedStandardVersion({ farm_id: farmId, standard_id: standardId, version, title, species_scope: speciesScope, production_stage_scope: productionStageScope, severity, nutrient_target_rules: nutrientTargetRules, ingredient_limit_rules: ingredientLimitRules, toxin_and_anti_nutrient_rules: toxinRules, health_escalation_rules: healthEscalationRules, cost_and_availability_rules: costRules }, wallet.privateKey);
+      const standard_hash = await hashStandard({ standard_id: standardId, version, title, species_scope: speciesScope, production_stage_scope: productionStageScope, severity, nutrient_target_rules: nutrientTargetRules, ingredient_limit_rules: ingredientLimitRules, toxin_and_anti_nutrient_rules: toxinRules, health_escalation_rules: healthEscalationRules, cost_and_availability_rules: costRules });
+      const result = await publishFeedStandardVersion({ farm_id: farmId, standard_id: standardId, version, title, species_scope: speciesScope, production_stage_scope: productionStageScope, severity, nutrient_target_rules: nutrientTargetRules, ingredient_limit_rules: ingredientLimitRules, toxin_and_anti_nutrient_rules: toxinRules, health_escalation_rules: healthEscalationRules, cost_and_availability_rules: costRules, standard_hash }, wallet.privateKey);
+      // Run setCurrentFeedStandardVersion separately — don't let it block the DB sync
       if (makeCurrent) {
-        await setCurrentFeedStandardVersion(farmId, standardId, version, wallet.privateKey);
+        try { await setCurrentFeedStandardVersion(farmId, standardId, version, wallet.privateKey); } catch { /* non-critical */ }
       }
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
-      await supabase.from('feed_standard_versions').upsert({
-        standard_id: standardId,
-        farm_id: selectedFarm?.id,
-        farm_chain_id: farmId,
-        version,
-        title,
-        species_scope: speciesScope,
-        production_stage_scope: productionStageScope,
-        severity,
-        nutrient_target_rules: nutrientTargetRules,
-        ingredient_limit_rules: ingredientLimitRules,
-        toxin_rules: toxinRules,
-        health_escalation_rules: healthEscalationRules,
-        cost_rules: costRules,
-        is_current: makeCurrent,
-        status: 'ACTIVE',
-        user_id: user?.id,
-        tx_hash: result.txHash,
-        explorer_url: `${GENLAYER_EXPLORER_URL}/tx/${result.txHash}`,
+      const syncRes = await fetch('/api/sync/feed-standard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          standard_id: standardId,
+          farm_id: farmId,
+          version,
+          title,
+          species_scope: speciesScope,
+          production_stage_scope: productionStageScope,
+          severity,
+          nutrient_target_rules: nutrientTargetRules,
+          ingredient_limit_rules: ingredientLimitRules,
+          toxin_and_anti_nutrient_rules: toxinRules,
+          health_escalation_rules: healthEscalationRules,
+          cost_and_availability_rules: costRules,
+          is_current: makeCurrent,
+          status: 'ACTIVE',
+          created_by: user?.id ?? null,
+          tx_hash: result.txHash,
+          explorer_url: `${GENLAYER_EXPLORER_URL}/tx/${result.txHash}`,
+        }),
       });
+      const syncData = await syncRes.json();
+      if (!syncRes.ok) throw new Error(`DB sync failed: ${syncData.error}`);
       setSuccess({ standardId, txHash: result.txHash });
     } catch (err: any) {
       setError(err.message ?? 'Failed to publish standard');
@@ -133,7 +139,7 @@ export default function NewFeedStandardPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Farm <span className="text-red-500">*</span></label>
             <select required value={farmId} onChange={e => setFarmId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
               <option value="">Select a farm</option>
-              {farms.map(f => <option key={f.farm_id} value={f.farm_id}>{f.name}</option>)}
+              {farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
           <div>

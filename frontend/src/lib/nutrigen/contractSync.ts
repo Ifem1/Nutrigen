@@ -35,7 +35,7 @@ export async function syncFarm(
     owner_wallet: farm.owner_wallet,
     metadata_hash: farm.metadata_hash ?? '',
     status: 'ACTIVE',
-    created_by: userId,
+    created_by: userId ?? null,
     ...base(txHash),
     updated_at: new Date().toISOString(),
   });
@@ -61,7 +61,7 @@ export async function syncFeedAdvisor(
     wallet: advisor.wallet,
     metadata_hash: advisor.metadata_hash ?? '',
     status: 'ACTIVE',
-    created_by: userId,
+    created_by: userId ?? null,
     ...base(txHash),
     updated_at: new Date().toISOString(),
   });
@@ -92,7 +92,7 @@ export async function syncLivestockBatch(
     feeding_constraints: batch.feeding_constraints,
     metadata_hash: batch.metadata_hash ?? '',
     status: 'ACTIVE',
-    created_by: userId,
+    created_by: userId ?? null,
     ...base(txHash),
     updated_at: new Date().toISOString(),
   });
@@ -120,7 +120,7 @@ export async function syncFeedIngredient(
     cost_summary: ingredient.cost_summary,
     metadata_hash: ingredient.metadata_hash ?? '',
     status: 'ACTIVE',
-    created_by: userId,
+    created_by: userId ?? null,
     ...base(txHash),
     updated_at: new Date().toISOString(),
   });
@@ -156,7 +156,7 @@ export async function syncFeedStandardVersion(
     metadata_hash: sv.metadata_hash ?? '',
     status: 'DRAFT',
     is_current: false,
-    created_by: userId,
+    created_by: userId ?? null,
     ...base(txHash),
     updated_at: new Date().toISOString(),
   }, { onConflict: 'farm_id,standard_id,version' });
@@ -197,7 +197,7 @@ export async function syncOptimizationRequest(
     evidence_manifest_hash: req.evidence_manifest_hash,
     ration_hash: req.ration_hash,
     status: 'PENDING',
-    created_by: userId,
+    created_by: userId ?? null,
     ...base(txHash),
     updated_at: new Date().toISOString(),
   });

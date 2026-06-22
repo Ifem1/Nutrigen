@@ -10,7 +10,7 @@ export const GENLAYER_NETWORK =
   process.env.NEXT_PUBLIC_GENLAYER_NETWORK ?? "studionet";
 export const NUTRIGEN_CONTRACT_ADDRESS =
   process.env.NEXT_PUBLIC_NUTRIGEN_CONTRACT_ADDRESS ??
-  "0xd1e92a8E1c46788DF9Af923ebEAB49aea904501d";
+  "0x1D63Ef3E2edeE0509D1dda9d4DDe15F3E876b602";
 
 export function explorerTxUrl(txHash: string): string {
   return `${GENLAYER_EXPLORER_URL}/tx/${txHash}`;

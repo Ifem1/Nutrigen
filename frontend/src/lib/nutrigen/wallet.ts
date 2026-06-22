@@ -1,15 +1,10 @@
-// Wallet generation and encrypted storage for GenLayer transaction signing
+// Wallet generation and storage for GenLayer transaction signing
+import { generatePrivateKey, createAccount } from "genlayer-js";
 
 export function generateWallet(): { address: string; privateKey: string } {
-  // Generate a random 32-byte private key
-  const array = new Uint8Array(32);
-  crypto.getRandomValues(array);
-  const privateKey = "0x" + Array.from(array).map((b) => b.toString(16).padStart(2, "0")).join("");
-
-  // Derive address from private key (simplified — for production use ethers.Wallet)
-  // We store both and use ethers on the server side for actual signing
-  const address = "0x" + Array.from(array.slice(12)).map((b) => b.toString(16).padStart(2, "0")).join("");
-  return { address, privateKey };
+  const privateKey = generatePrivateKey();
+  const account = createAccount(privateKey);
+  return { address: account.address, privateKey };
 }
 
 const STORAGE_KEY = "nutrigen_wallet";

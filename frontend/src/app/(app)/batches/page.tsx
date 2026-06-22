@@ -11,7 +11,6 @@ const STATUS_BADGE: Record<string, string> = {
 
 interface Batch {
   id: string;
-  batch_id: string;
   species: string;
   breed_summary: string;
   production_stage: string;

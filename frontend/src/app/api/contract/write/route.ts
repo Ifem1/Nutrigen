@@ -1,72 +1,57 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ethers } from "ethers";
+import { createClient, createAccount } from "genlayer-js";
+import { studionet } from "genlayer-js/chains";
 
-const RPC_URL = process.env.NEXT_PUBLIC_GENLAYER_RPC_URL ?? "https://studio.genlayer.com/api";
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_NUTRIGEN_CONTRACT_ADDRESS ?? "0x1D63Ef3E2edeE0509D1dda9d4DDe15F3E876b602";
+const EXPLORER_URL = process.env.NEXT_PUBLIC_GENLAYER_EXPLORER_URL ?? "https://explorer-studio.genlayer.com";
 
 export async function POST(req: NextRequest) {
   try {
     const { method, args, privateKey, contractAddress } = await req.json();
 
-    if (!method || !privateKey || !contractAddress) {
+    if (!method || !privateKey) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    // Build the gen_call write payload
-    const payload = {
-      jsonrpc: "2.0",
-      id: Date.now(),
-      method: "gen_call",
-      params: [
-        {
-          to: contractAddress,
-          data: { method, args: args ?? [] },
-          type: "write",
-          value: "0x0",
-        },
-      ],
-    };
+    const address = (contractAddress ?? CONTRACT_ADDRESS) as `0x${string}`;
+    const account = createAccount(privateKey as `0x${string}`);
 
-    // Sign the payload with the private key (GenLayer uses eth_sign style)
-    const wallet = new ethers.Wallet(privateKey);
-    const messageHash = ethers.hashMessage(JSON.stringify(payload.params[0]));
-    const signature = await wallet.signMessage(ethers.getBytes(messageHash));
-
-    // Send to GenLayer RPC
-    const rpcPayload = {
-      ...payload,
-      params: [
-        {
-          ...payload.params[0],
-          from: wallet.address,
-          signature,
-        },
-      ],
-    };
-
-    const res = await fetch(RPC_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(rpcPayload),
+    const client = createClient({
+      chain: studionet,
+      account,
     });
 
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json({ error: `RPC error: ${text}` }, { status: 502 });
+    const txHash = await client.writeContract({
+      address,
+      functionName: method,
+      args: args ?? [],
+      value: BigInt(0),
+    });
+
+    const explorerUrl = `${EXPLORER_URL}/tx/${txHash}`;
+
+    // Wait for any terminal state (ACCEPTED or UNDETERMINED)
+    let data: unknown = null;
+    let consensusStatus = "PENDING";
+    try {
+      const receipt = await client.waitForTransactionReceipt({
+        hash: txHash,
+        status: "FINALIZED" as any,
+        retries: 80,
+        interval: 5000,
+      });
+      data = receipt;
+      consensusStatus = (receipt as any)?.status ?? (receipt as any)?.consensus_data?.final_used_leader_receipt?.execution_result ?? "FINALIZED";
+    } catch {
+      // Transaction submitted but consensus still pending
+      consensusStatus = "PENDING";
     }
-
-    const result = await res.json();
-
-    if (result.error) {
-      return NextResponse.json({ error: result.error.message ?? JSON.stringify(result.error) }, { status: 400 });
-    }
-
-    const txHash: string = result.result ?? "";
-    const explorerUrl = `${process.env.NEXT_PUBLIC_GENLAYER_EXPLORER_URL ?? "https://explorer-studio.genlayer.com"}/tx/${txHash}`;
 
     return NextResponse.json({
-      txHash,
+      txHash: String(txHash),
       explorerUrl,
-      data: result.result,
+      data,
+      consensusStatus,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

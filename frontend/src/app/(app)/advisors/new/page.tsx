@@ -8,7 +8,7 @@ import { generateEntityId } from '@/lib/nutrigen/feedPacket';
 import { generateWallet } from '@/lib/nutrigen/wallet';
 import { GENLAYER_EXPLORER_URL } from '@/lib/genlayer/config';
 
-interface Farm { id: string; farm_id: string; name: string; }
+interface Farm { id: string; name: string; }
 
 export default function NewAdvisorPage() {
   const [wallet, setWallet] = useState<{ address: string; privateKey: string } | null>(null);
@@ -23,15 +23,15 @@ export default function NewAdvisorPage() {
   const [success, setSuccess] = useState<{ advisorId: string; txHash: string } | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) setWallet(JSON.parse(stored));
     const supabase = createClient();
-    supabase.from('farms').select('id, farm_id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
+    supabase.from('farms').select('id, name').eq('status', 'ACTIVE').then(({ data }) => setFarms(data ?? []));
   }, []);
 
   function handleGenerateWallet() {
     const w = generateWallet();
-    sessionStorage.setItem('nutrigen_wallet', JSON.stringify(w));
+    localStorage.setItem('nutrigen_wallet', JSON.stringify(w));
     setWallet(w);
   }
 
@@ -42,20 +42,18 @@ export default function NewAdvisorPage() {
     setLoading(true);
     try {
       const advisorId = generateEntityId('advisor');
-      const selectedFarm = farms.find(f => f.farm_id === farmId);
       const result = await registerFeedAdvisor({ advisor_id: advisorId, farm_id: farmId, name, credential_summary: credentialSummary, scope_summary: scopeSummary, wallet: advisorWallet }, wallet.privateKey);
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       await supabase.from('feed_advisors').upsert({
-        advisor_id: advisorId,
-        farm_id: selectedFarm?.id,
-        farm_chain_id: farmId,
+        id: advisorId,
+        farm_id: farmId,
         name,
         credential_summary: credentialSummary,
         scope_summary: scopeSummary,
-        wallet_address: advisorWallet,
+        wallet: advisorWallet,
         status: 'ACTIVE',
-        user_id: user?.id,
+        created_by: user?.id ?? null,
         tx_hash: result.txHash,
         explorer_url: `${GENLAYER_EXPLORER_URL}/tx/${result.txHash}`,
       });
@@ -112,7 +110,7 @@ export default function NewAdvisorPage() {
           <label className="block text-sm font-medium text-gray-700 mb-1">Farm <span className="text-red-500">*</span></label>
           <select required value={farmId} onChange={e => setFarmId(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
             <option value="">Select a farm</option>
-            {farms.map(f => <option key={f.farm_id} value={f.farm_id}>{f.name}</option>)}
+            {farms.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
         </div>
         <div>

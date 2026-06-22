@@ -42,7 +42,7 @@ export default function ResultsPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('nutrigen_wallet');
+    const stored = localStorage.getItem('nutrigen_wallet');
     if (stored) setWallet(JSON.parse(stored));
   }, []);
 
@@ -51,7 +51,7 @@ export default function ResultsPage() {
       setLoading(true);
       try {
         const supabase = createClient();
-        const { data: req } = await supabase.from('feed_optimization_requests').select('*, farms(name), livestock_batches(species, production_stage)').eq('request_id', id).single();
+        const { data: req } = await supabase.from('feed_optimization_requests').select('*, farms(name), livestock_batches(species, production_stage)').eq('id', id).single();
         setRequest(req);
 
         // Try GenLayer first, fall back to Supabase
